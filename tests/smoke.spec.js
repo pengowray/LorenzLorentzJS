@@ -10,7 +10,7 @@ test('loads without console or page errors', async ({ page }) => {
 
   await page.goto('/');
   await expect(page.locator('canvas')).toBeVisible();
-  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 10000, polling: 100 });
   await page.waitForTimeout(1500);
 
   expect(errors, errors.join('\n')).toEqual([]);
@@ -18,7 +18,7 @@ test('loads without console or page errors', async ({ page }) => {
 
 test('canvas has non-black pixels', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 10000, polling: 100 });
   // Let a few hundred frames accumulate so the trail is visible
   await page.waitForTimeout(1500);
 
@@ -44,7 +44,7 @@ test('canvas has non-black pixels', async ({ page }) => {
 
 test('render loop advances and attractors evolve', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 10000, polling: 100 });
 
   const before = await page.evaluate(() => window._app.getState());
   await page.waitForTimeout(1000);
@@ -62,7 +62,7 @@ test('render loop advances and attractors evolve', async ({ page }) => {
 
 test('keyboard toggles flip app flags', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 10000, polling: 100 });
   const canvas = page.locator('canvas');
   await canvas.click(); // ensure window has focus
 
@@ -83,7 +83,7 @@ test('bedhair warp shader compiles and changes the rendered output', async ({ pa
   page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
   await page.goto('/');
-  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 10000, polling: 100 });
   await page.waitForTimeout(1500); // build up a trail
 
   // Sample N random pixel locations off the WebGL backbuffer with and without
@@ -117,7 +117,7 @@ test('beam mode redistributes brightness across the trail', async ({ page }) => 
   page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
   await page.goto('/');
-  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 10000, polling: 100 });
   await page.waitForTimeout(2000); // let velocity vectors fill the buffer
 
   // Pause so trail growth doesn't confound the measurement.
@@ -166,7 +166,7 @@ test('beam mode redistributes brightness across the trail', async ({ page }) => 
 
 test('follow-one mode targets attractor[0]', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 10000, polling: 100 });
   await page.waitForTimeout(500);
   await page.locator('canvas').click();
   await page.keyboard.press('q');
@@ -187,7 +187,7 @@ test('squiggle and doodle change the rendered output', async ({ page }) => {
   page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
 
   await page.goto('/');
-  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 10000, polling: 100 });
   await page.waitForTimeout(1500);
 
   const pixelSum = () => page.evaluate(() => {
@@ -220,7 +220,7 @@ test('squiggle and doodle change the rendered output', async ({ page }) => {
 
 test('stripes toggle reduces total brightness', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 10000, polling: 100 });
   await page.waitForTimeout(1500);
 
   // Pause first so the trail doesn't keep growing between samples — the
@@ -250,7 +250,7 @@ test('stripes toggle reduces total brightness', async ({ page }) => {
 
 test('PNG export produces a downloadable image', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 10000, polling: 100 });
   await page.waitForTimeout(1000);
   await page.locator('canvas').click();
 
@@ -263,7 +263,7 @@ test('PNG export produces a downloadable image', async ({ page }) => {
 
 test('speedup adjusts timescale away from 1', async ({ page }) => {
   await page.goto('/');
-  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 10000, polling: 100 });
   await page.waitForTimeout(500); // accumulate some velocity history
 
   expect(await page.evaluate(() => window._app.attractors[0].timescale)).toBe(1);

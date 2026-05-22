@@ -14,7 +14,7 @@ import {
   timeUniform,
 } from './material.js';
 
-const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x000000, 1);
@@ -56,7 +56,7 @@ function addAttractor(opts) {
   return a;
 }
 
-addAttractor({ dt: DT, steps: 37, maxPoints: 10000, color: { r: 1, g: 1, b: 1 }, stripePeriod: 2 });
+addAttractor({ dt: DT, steps: 37, maxPoints: 10000, color: { r: 1, g: 1, b: 1 }, stripePeriod: 2, linewidth: 4 });
 for (let i = 0; i < 120; i++) {
   const shade = (30 + Math.random() * 150) / 255;
   addAttractor({
@@ -65,19 +65,27 @@ for (let i = 0; i < 120; i++) {
     maxPoints: 50 + Math.floor(Math.random() * 1200),
     color: { r: shade, g: shade, b: shade + Math.random() * 10 / 255 },
     stripePeriod: (i % 15) + 2, // matches the original's (attCount % 15) + 2
+    linewidth: 1.5,
   });
 }
-addAttractor({ dt: DT, steps: 37, maxPoints: 10000, color: { r: 1, g: 1, b: 1 }, stripePeriod: 2 });
+addAttractor({ dt: DT, steps: 37, maxPoints: 10000, color: { r: 1, g: 1, b: 1 }, stripePeriod: 2, linewidth: 4 });
 
-// Pre-warm the trails so the butterfly is recognisable from the very first
-// rendered frame. The bright attractors hold 10000 points and only add ~37
-// per frame, so without this they'd take ~4.5s to fill. Running ~280
-// iterations here gives every attractor enough simulated time to settle
-// onto the attractor surface and (for the grey ones) diverge visibly.
+// LineMaterial needs the screen resolution to compute pixel-accurate line
+// width. Update on init and on every resize.
+function updateResolutions() {
+  const w = window.innerWidth, h = window.innerHeight;
+  for (const a of attractors) a.material.resolution.set(w, h);
+}
+updateResolutions();
+
+// Pre-warm the trails so the butterfly is fully formed in frame 1 instead
+// of taking ~5 seconds to fill. step() runs the Lorenz integration without
+// touching the GPU, so this loop is cheap; flushGeometry() pushes to GL.
 const PREWARM_ITERATIONS = 280;
 for (let i = 0; i < PREWARM_ITERATIONS; i++) {
-  for (const a of attractors) a.evolve();
+  for (const a of attractors) a.step();
 }
+for (const a of attractors) a.flushGeometry();
 
 // State
 const flags = {
@@ -94,7 +102,9 @@ const flags = {
 };
 
 function downloadPng() {
-  // preserveDrawingBuffer is on, so the backbuffer is still intact.
+  // Force a fresh render so the backbuffer has current content before toBlob
+  // (we don't keep preserveDrawingBuffer on because it tanks WebGL perf).
+  renderer.render(scene, camera);
   renderer.domElement.toBlob((blob) => {
     if (!blob) return;
     const url = URL.createObjectURL(blob);
@@ -136,6 +146,7 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
+  updateResolutions();
 });
 
 function animate() {

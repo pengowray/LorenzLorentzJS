@@ -1,8 +1,9 @@
 import * as THREE from 'three';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { MIN_LORENZ, MAX_LORENZ } from './lorenz.js';
 
-// LineBasicMaterial patched at compile time with several effects, all
-// toggleable via shared uniforms:
+// Patched LineMaterial (from three/addons/lines) with the same set of effects
+// that the old LineBasicMaterial port had, all toggleable via shared uniforms:
 //
 //   uBedhair          messy decorative warp that pulls the trail apart at its
 //                      head and tail (the original sketch's Lorentz-flavoured
@@ -10,15 +11,16 @@ import { MIN_LORENZ, MAX_LORENZ } from './lorenz.js';
 //   uSquiggleStrength time-animated random jitter on the head of the trail
 //   uDoodleStrength   monotonic z-offset growing toward the trail tail
 //   uStripeStrength   per-attractor dashed pattern (varies by uStripePeriod)
-//   uBeam             relativistic beaming: brightens vertices whose velocity
-//                      is directed toward the camera, dims those moving away.
-//                      Uses the per-vertex aVelocity attribute (dx,dy,dz) and
-//                      uCameraPos. This is a physics-defensible Lorentz mode.
+//   uBeam             relativistic-style brightness modulation: vertices whose
+//                      tangent points toward the camera brighten, others dim.
+//                      Velocity direction is read from segment endpoints
+//                      (instanceEnd - instanceStart), so no separate velocity
+//                      attribute is needed.
 //
-// All toggles are shared singletons so flipping one is one assignment
-// regardless of how many attractors are in the scene. `uMaxPoints` and
-// `uStripePeriod` are per-material (set at compile time) since each
-// attractor sizes/dashes its buffer differently.
+// All toggles are shared singletons so flipping one is one assignment regardless
+// of how many attractors are in the scene. `uMaxPoints` and `uStripePeriod`
+// are per-material (set at compile time) since each attractor sizes/dashes its
+// buffer differently.
 
 export const bedhairUniform          = { value: 0.0 };
 export const squiggleStrengthUniform = { value: 0.0 };
@@ -27,7 +29,10 @@ export const doodleUniform           = { value: 0.0 };
 export const stripeStrengthUniform   = { value: 0.0 };
 export const beamUniform             = { value: 0.0 };
 export const cameraPosUniform        = { value: new THREE.Vector3() };
-export const maxVelMagUniform        = { value: 350.0 }; // observed peak ~370 from the original sketch's MaxLorenzV
+// uMaxSegLen calibrates beta = segLen / uMaxSegLen for the beam Doppler
+// formula. With dt=0.0003 and max Lorenz velocity ~500, max segment length
+// is ~0.15 in attractor coords.
+export const maxSegLenUniform        = { value: 0.15 };
 export const timeUniform             = { value: 0.0 };
 
 const minLorenzUniform = { value: new THREE.Vector3(MIN_LORENZ.x, MIN_LORENZ.y, MIN_LORENZ.z) };
@@ -45,9 +50,8 @@ uniform float uStripeStrength;
 uniform float uStripePeriod;
 uniform float uBeam;
 uniform vec3 uCameraPos;
-uniform float uMaxVelMag;
+uniform float uMaxSegLen;
 uniform float uTime;
-attribute vec3 aVelocity;
 
 vec3 bedhairWarp(vec3 p, float amount) {
   vec3 range = uMaxLorenz - uMinLorenz;
@@ -64,43 +68,41 @@ vec3 bedhairWarp(vec3 p, float amount) {
 }
 
 float hashf(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
-`;
 
-const TRANSFORM_GLSL = /* glsl */ `
-  #include <begin_vertex>
-  // fromHead: 0 at the newest point (head of the trail), grows toward the tail.
-  float fromHead = uMaxPoints - 1.0 - float(gl_VertexID);
+// Apply all position-warping effects to a single endpoint of a segment.
+vec3 applyWarps(vec3 p, float slot) {
+  vec3 warped = p;
+  float fromHead = uMaxPoints - 1.0 - slot;
 
   if (uBedhair > 0.0) {
-    float amount = float(gl_VertexID) / uMaxPoints;
-    vec3 warped = bedhairWarp(transformed, amount);
-    transformed = mix(transformed, warped, uBedhair);
+    float amount = slot / uMaxPoints;
+    vec3 w = bedhairWarp(warped, amount);
+    warped = mix(warped, w, uBedhair);
   }
-
   if (uDoodleStrength > 0.0) {
-    // Each older point pushed further in +z; matches the original ".01 * vcount".
-    transformed.z += 0.01 * fromHead * uDoodleStrength;
+    warped.z += 0.01 * fromHead * uDoodleStrength;
   }
-
   if (uSquiggleStrength > 0.0 && fromHead < uSquiggleCount) {
     float intensity = (uSquiggleCount - fromHead) / uSquiggleCount;
-    float s = float(gl_VertexID);
     vec3 jitter = vec3(
-      hashf(s * 1.1 + uTime * 13.0) - 0.5,
-      hashf(s * 2.3 + uTime * 17.0) - 0.5,
-      hashf(s * 3.7 + uTime * 23.0) - 0.5
+      hashf(slot * 1.1 + uTime * 13.0) - 0.5,
+      hashf(slot * 2.3 + uTime * 17.0) - 0.5,
+      hashf(slot * 3.7 + uTime * 23.0) - 0.5
     );
-    transformed += jitter * intensity * uSquiggleStrength * 0.5;
+    warped += jitter * intensity * uSquiggleStrength * 0.5;
   }
+  return warped;
+}
 `;
 
-export function makeAttractorMaterial(maxPoints, stripePeriod = 4) {
-  const material = new THREE.LineBasicMaterial({
+export function makeAttractorMaterial(maxPoints, stripePeriod = 4, linewidth = 1) {
+  const material = new LineMaterial({
     vertexColors: true,
     transparent: true,
     blending: THREE.AdditiveBlending,
     depthTest: false,
     depthWrite: false,
+    linewidth, // in screen pixels
   });
 
   material.onBeforeCompile = (shader) => {
@@ -115,42 +117,54 @@ export function makeAttractorMaterial(maxPoints, stripePeriod = 4) {
     shader.uniforms.uStripePeriod = { value: stripePeriod };
     shader.uniforms.uBeam = beamUniform;
     shader.uniforms.uCameraPos = cameraPosUniform;
-    shader.uniforms.uMaxVelMag = maxVelMagUniform;
+    shader.uniforms.uMaxSegLen = maxSegLenUniform;
     shader.uniforms.uTime = timeUniform;
 
     shader.vertexShader = HEADER_GLSL + '\n' + shader.vertexShader
-      .replace('#include <begin_vertex>', TRANSFORM_GLSL)
+      // Warp segment endpoints before they're projected into screen space.
       .replace(
-        '#include <color_vertex>',
+        'vec4 start = modelViewMatrix * vec4( instanceStart, 1.0 );',
+        `vec3 _warpedStart = applyWarps(instanceStart, float(gl_InstanceID));
+         vec4 start = modelViewMatrix * vec4(_warpedStart, 1.0);`,
+      )
+      .replace(
+        'vec4 end = modelViewMatrix * vec4( instanceEnd, 1.0 );',
+        `vec3 _warpedEnd = applyWarps(instanceEnd, float(gl_InstanceID + 1));
+         vec4 end = modelViewMatrix * vec4(_warpedEnd, 1.0);`,
+      )
+      // Modulate vertex colour with stripes and beam after the standard
+      // start/end colour pick.
+      .replace(
+        'vColor.xyz = ( position.y < 0.5 ) ? instanceColorStart : instanceColorEnd;',
         /* glsl */ `
-        #include <color_vertex>
+        vColor.xyz = (position.y < 0.5) ? instanceColorStart : instanceColorEnd;
+        float _slot = (position.y < 0.5) ? float(gl_InstanceID) : float(gl_InstanceID + 1);
+
         if (uStripeStrength > 0.0) {
-          float keep = mod(float(gl_VertexID), uStripePeriod) < 0.5 ? 1.0 : 0.0;
-          vColor.rgb *= mix(1.0, keep, uStripeStrength);
+          float keep = mod(_slot, uStripePeriod) < 0.5 ? 1.0 : 0.0;
+          vColor *= mix(1.0, keep, uStripeStrength);
         }
+
         if (uBeam > 0.0) {
-          // Relativistic-style beaming: a particle moving toward the observer
-          // is brightened (Doppler intensity boost), one moving away is dimmed.
-          //   D = 1 / (1 - 0.85 * beta * cos(theta))
-          //   factor = mix(1, clamp(D, 0, 6), uBeam)
-          // where beta = |v|/c (we map c to uMaxVelMag, the highest observed
-          // segment speed) and theta is the angle between v and the line from
-          // the vertex to the camera. The 0.85 prefactor tames the singularity
-          // at beta=1, cos=1 to a finite ~6x; without it most vertices wash out.
-          vec3 worldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+          // Doppler-style brightness modulation. Velocity direction is the
+          // segment tangent; segment length is a proxy for speed.
+          vec3 worldStart = (modelMatrix * vec4(instanceStart, 1.0)).xyz;
+          vec3 worldEnd = (modelMatrix * vec4(instanceEnd, 1.0)).xyz;
+          vec3 worldPos = (position.y < 0.5) ? worldStart : worldEnd;
+          vec3 segDir = worldEnd - worldStart;
+          float segLen = length(segDir);
+          vec3 vDir = segLen > 0.001 ? segDir / segLen : vec3(0.0);
           vec3 viewDir = normalize(uCameraPos - worldPos);
-          float vMag = length(aVelocity);
-          vec3 vDir = vMag > 0.001 ? aVelocity / vMag : vec3(0.0);
-          float beta = clamp(vMag / uMaxVelMag, 0.0, 0.99);
+          float beta = clamp(segLen / uMaxSegLen, 0.0, 0.99);
           float cosTheta = dot(vDir, viewDir);
           float D = 1.0 / (1.0 - 0.85 * beta * cosTheta);
           float factor = mix(1.0, clamp(D, 0.0, 6.0), uBeam);
-          vColor.rgb *= factor;
+          vColor *= factor;
         }
-`,
+        `,
       );
   };
 
-  material.customProgramCacheKey = () => 'lorenz-attractor-line';
+  material.customProgramCacheKey = () => 'lorenz-attractor-thick-line';
   return material;
 }

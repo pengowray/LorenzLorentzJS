@@ -6,7 +6,7 @@ A tribute to Hendrik Lorentz (1853–1928) and Edward Lorenz (1917–2008): 122 
 
 ## Running
 
-The page uses native ES modules + an importmap, so no build step is needed — but it must be served over `http://`, not opened as `file://`. Source lives in [docs/](docs/) so GitHub Pages can host it directly.
+The page uses native ES modules + an importmap, so no build step is needed — but it must be served over `http://`, not opened as `file://`. Source lives in [docs/](docs/) so GitHub Pages can host it directly. Three.js is vendored under `docs/vendor/` so the page loads with zero CDN dependencies (which also makes tests fast).
 
 ```sh
 cd docs
@@ -45,7 +45,7 @@ All meaningful features from the original sketch are now ported. The three posit
 
 The `bedhair` effect was originally called "Lorentz warp" in the source sketch — an attempt at a Lorentz-transform-flavoured visual that ended up looking more like messy hair than physics.
 
-The `beam` mode is a first physics-defensible Lorentz transform: per-vertex velocity vectors stored alongside positions, combined with the camera position to compute a Doppler-style intensity boost. Particles whose velocity is directed toward the observer brighten; those moving away dim. The effect is visually subtle at the current 1px line width — switching to `Line2` thick lines will make it much more dramatic.
+The `beam` mode is a first physics-defensible Lorentz transform: each segment's tangent direction (`instanceEnd - instanceStart`) is dotted with the line-to-camera direction to produce a Doppler-style intensity boost. Particles whose velocity points toward the observer brighten; those moving away dim. Still on the to-do list: a Lorentz-transform mode that actually *warps* the geometry (length contraction / Terrell rotation), not just modulates brightness.
 
 The simulation pre-warms ~280 iterations at startup so the butterfly is fully formed in the first rendered frame (without this it took ~5 seconds for the bright trails to fill).
 
