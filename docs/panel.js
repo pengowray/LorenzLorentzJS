@@ -146,26 +146,47 @@ const STYLE = `
 }
 #panel .cambtn:hover { color: #ddd; border-color: #555; }
 
-/* Mobile / touch devices: bigger touch targets, larger font. */
+/* Mobile / touch devices: bigger touch targets, larger font, and a much
+   more obvious master header so the open/close button is impossible to miss. */
 @media (max-width: 768px), (pointer: coarse) {
   #panel {
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1.7;
-    min-width: 220px;
+    min-width: 240px;
     top: 8px; right: 8px;
   }
-  #panel .head { font-size: 11px; padding: 8px 12px; }
-  #panel .title { font-size: 10px; }
-  #panel .row { padding: 6px 0; grid-template-columns: 20px 1fr 20px; }
-  #panel .row .k { font-size: 12px; }
-  #panel .row .s { font-size: 13px; }
-  #panel .cambtn { padding: 8px 0; font-size: 13px; }
-  #panel .knob { padding: 4px 0; grid-template-columns: 20px 36px 1fr 36px; }
-  #panel .knob .knob-label { font-size: 11px; }
-  #panel .knob .value { font-size: 11px; }
-  #panel .knob input[type="range"] { height: 4px; }
-  #panel .knob input[type="range"]::-webkit-slider-thumb { width: 14px; height: 14px; }
-  #panel .knob input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; }
+  /* Big chunky header bar that doubles as the open/close button. */
+  #panel .head {
+    font-size: 14px;
+    padding: 14px 16px;
+    background: rgba(40, 40, 40, 0.85);
+    letter-spacing: 2px;
+  }
+  #panel .head .chev { font-size: 16px; }
+  /* When collapsed, the panel IS just the header — make sure it stays
+     tappable and visible. */
+  #panel.collapsed { min-width: 140px; }
+
+  #panel .title { font-size: 12px; padding: 4px 0; }
+  #panel .title .chev { font-size: 11px; }
+  #panel .row {
+    padding: 10px 0;
+    grid-template-columns: 22px 1fr 22px;
+    min-height: 32px;
+  }
+  #panel .row .k { font-size: 13px; }
+  #panel .row .s { font-size: 16px; }
+  #panel .cambtn { padding: 12px 0; font-size: 15px; min-height: 36px; }
+  #panel .knob {
+    padding: 8px 0;
+    grid-template-columns: 22px 42px 1fr 44px;
+    min-height: 32px;
+  }
+  #panel .knob .knob-label { font-size: 13px; }
+  #panel .knob .value { font-size: 13px; }
+  #panel .knob input[type="range"] { height: 6px; }
+  #panel .knob input[type="range"]::-webkit-slider-thumb { width: 20px; height: 20px; }
+  #panel .knob input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; }
 }
 `;
 
@@ -177,7 +198,8 @@ export function setupPanel({ actions, isOn, canvas, knobs = {} }) {
   const panel = document.createElement('div');
   panel.id = 'panel';
 
-  // Master header: clicking collapses/expands the whole body.
+  // Master header: clicking collapses/expands the whole body. On touch
+  // devices we render this as a thick tappable button (hamburger + label).
   const head = document.createElement('div');
   head.className = 'head';
   const headLabel = document.createElement('span');
