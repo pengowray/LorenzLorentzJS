@@ -29,49 +29,47 @@ function divisorsInRange(N, minL, maxL) {
   return out;
 }
 
-// Smoothstep-shaped fade envelope. Inside the first fadeFrames of the
-// cycle, alpha ramps 0 -> 1. Inside the last fadeFrames, 1 -> 0. Otherwise
-// alpha = 1. `phase` and `L` are in frame units.
+// Smoothstep-shaped fade envelope. Phase 0 (and phase L) is the trough
+// (alpha=0); alpha rises to 1 over the first `fadeFrames`, stays at 1 in
+// the middle, and falls back to 0 over the last `fadeFrames`.
 function alphaForPhase(phase, L, fadeFrames) {
   const ph = ((phase % L) + L) % L;
   let a;
   if (ph < fadeFrames) a = ph / fadeFrames;
   else if (ph >= L - fadeFrames) a = (L - ph) / fadeFrames;
   else return 1;
-  // smoothstep
   return a * a * (3 - 2 * a);
 }
 
-// Record a looping WebM.
+// Record a TRULY seamless looping WebM.
+//
+// Geometric reality of looping a chaotic system: if an attractor is at any
+// non-trivial alpha at the seam (the boundary between frame V-1 and frame 0
+// on playback), its xyz at frame V-1 will be visibly different from its
+// xyz at frame 0 (the chaotic divergence over V frames is much larger than
+// the attractor size). To avoid that jump we have exactly one option
+// without forcing closure: make sure every attractor is at alpha = 0 at
+// the seam.
 //
 // In `staggered` mode (default):
-//   - Pass 0: simulate V frames naturally with no rendering, capturing each
-//     attractor's full xyz trajectory. This is the "working out the paths
-//     ahead of time" the loop relies on — it lets us pick fade schedules
-//     that put each attractor's invisible phase over the video seam if we
-//     want, and lets us measure how far the live state has drifted by
-//     frame V (so we know which attractors most need to be hidden there).
-//   - Per attractor: pick a cycle length L_i from divisors of V in
-//     [120, 360] and a random phase offset O_i in [0, L_i). Because L_i
-//     divides V, alpha(0) === alpha(V) for every attractor — the loop
-//     boundary is a no-op in alpha space. Per-attractor offsets stagger
-//     the fade moments across the video so at any single frame only a
-//     handful of attractors are in their fade window; "one disappears, a
-//     different one reappears" rather than all fading together.
-//   - Pass 1: rewind to the live state and re-simulate (this time with
-//     MediaRecorder capturing). Each frame, before flush, set every
-//     attractor's per-material uOpacity uniform from its alphaForPhase.
-//     The Lorenz integration is unchanged — no morphing, no teleporting.
-//     The xyz at frame V differs from frame 0 (chaos), but attractors
-//     near a fade trough at the seam are at low alpha so their position
-//     jump is invisible.
+//   - Every attractor gets phase offset O_i = 0, so its alpha trough lands
+//     on frame 0 (which is the same frame as V — the loop boundary).
+//   - Cycle length L_i is varied across attractors (drawn round-robin from
+//     the divisors of V in [minCycleFrames, maxCycleFrames]).
+//   - Within the video, secondary troughs at L_i, 2L_i, ..., (V/L_i - 1)*L_i
+//     fall at different frames for attractors with different L_i. That gives
+//     the "one fades, another reappears" feel through the middle of the loop.
+//   - The seam itself is a brief "everything is at trough" moment. The fade
+//     window is `fadeFrames` long on each side of the seam, so the fully-
+//     dark moment is brief and the in/out are smooth.
 //
-// In `staggered: false` mode every attractor stays at alpha = 1 throughout
-// the recording. The video has a hard cut at the seam but the dynamics
-// inside the loop are unmodified — useful as a debugging baseline.
+// In `staggered: false` mode no fading happens at all — every attractor
+// stays at full opacity. Useful as a debug baseline that shows the raw
+// hard-cut seam.
 //
-// (The previous force-the-trajectory-into-a-closed-loop algorithm is kept
-// commented at the bottom of this file for reference.)
+// (Earlier loop-forcing morph algorithms — which tried to keep the seam
+// looking "full" by warping the chaotic trajectory back to its starting
+// state — are preserved in git history at fb4245d / 9abd1ba / 44c3595.)
 export async function recordLoop({
   renderer,
   scene,
@@ -93,52 +91,17 @@ export async function recordLoop({
     const K = fadeFrames;
     const num = attractors.length;
 
-    const initialStates = attractors.map(a => a.saveState());
-
-    // Pass 0: simulate V frames naturally, recording xyz per attractor per
-    // frame. We don't strictly need the full trajectory for the simple
-    // fade-only loop, but having it on hand lets the fade scheduling be
-    // path-aware (see TODOs below).
-    const trajectories = staggered
-      ? attractors.map(() => new Float32Array(V * 3))
-      : null;
+    // Schedule a cycle length per attractor. All offsets are zero so all
+    // alpha troughs land on frame 0 (= the loop seam).
+    let cycles = attractors.map(() => null);
     if (staggered) {
-      for (let i = 0; i < num; i++) {
-        trajectories[i][0] = attractors[i].x;
-        trajectories[i][1] = attractors[i].y;
-        trajectories[i][2] = attractors[i].z;
-      }
-      for (let frame = 1; frame < V; frame++) {
-        for (let i = 0; i < num; i++) {
-          attractors[i].step();
-          const t = trajectories[i];
-          t[frame * 3 + 0] = attractors[i].x;
-          t[frame * 3 + 1] = attractors[i].y;
-          t[frame * 3 + 2] = attractors[i].z;
-        }
-      }
-      // Rewind so Pass 1 runs the same deterministic simulation again,
-      // this time captured to video.
-      for (let i = 0; i < num; i++) attractors[i].restoreState(initialStates[i]);
+      const divisors = divisorsInRange(V, minCycleFrames, Math.min(maxCycleFrames, V));
+      if (!divisors.length) divisors.push(V);
+      // Round-robin so attractors get a mix of cycle lengths.
+      cycles = attractors.map((_, i) => ({ L: divisors[i % divisors.length] }));
     }
 
-    // Per-attractor fade schedule.
-    const divisors = divisorsInRange(V, minCycleFrames, Math.min(maxCycleFrames, V));
-    if (!divisors.length) divisors.push(V);
-    const cycles = attractors.map((_, i) => {
-      if (!staggered) return null; // no fading
-      // Spread L choices across the divisor set so we get cycle-length variety.
-      const L = divisors[i % divisors.length];
-      // Random phase offset so different attractors fade at different times.
-      // TODO (path-aware fade scheduling): bias O_i so attractors whose
-      // trajectory[i] at V differs most from trajectory[i] at 0 get O_i
-      // close to 0 (their trough lands on the video seam, so their seam
-      // jump is invisible). Right now O_i is purely random.
-      const O = Math.floor(Math.random() * L);
-      return { L, O };
-    });
-
-    // Pass 1: lockstep simulate + capture.
+    // MediaRecorder setup.
     const stream = renderer.domElement.captureStream(fps);
     const chunks = [];
     let mimeType = 'video/webm;codecs=vp9';
@@ -151,15 +114,14 @@ export async function recordLoop({
     const stopped = new Promise(resolve => { recorder.onstop = resolve; });
     recorder.start();
 
+    // Record V frames. Simulation runs lockstep; per-attractor opacity
+    // follows its alpha cycle.
     for (let frame = 0; frame < V; frame++) {
       for (let i = 0; i < num; i++) attractors[i].step();
 
-      // Set per-attractor alpha.
       for (let i = 0; i < num; i++) {
         const cycle = cycles[i];
-        const alpha = cycle
-          ? alphaForPhase(frame + cycle.O, cycle.L, K)
-          : 1;
+        const alpha = cycle ? alphaForPhase(frame, cycle.L, K) : 1;
         attractors[i].material.userData.opacityUniform.value = alpha;
       }
 
@@ -172,7 +134,7 @@ export async function recordLoop({
       await new Promise(r => requestAnimationFrame(r));
     }
 
-    // Reset opacities for normal viewing after the recording is done.
+    // Restore opacities for normal viewing after recording.
     for (let i = 0; i < num; i++) {
       attractors[i].material.userData.opacityUniform.value = 1;
     }
@@ -188,16 +150,16 @@ export async function recordLoop({
 }
 
 // =============================================================================
-// Earlier approach: force each attractor's trajectory into a closed loop by
-// picking a cycle length L_i (divisor of V) that minimises closure error and
-// applying a velocity-blended drift back to the anchor at end of every cycle.
+// Earlier loop-forcing iterations are preserved in git history:
 //
-// The closure was always small at the anchor but on every full orbit the
-// drift correction visibly bent the trail away from the natural chaos
-// trajectory — a small but persistent "seam cut across" all the way through
-// the recording. Replaced with the fade-based scheme above; preserved here
-// in case the path data + the morph idea is useful again later.
+//   fb4245d  per-attractor cycle length + drift-blended velocity morph
+//   9abd1ba  per-attractor cycle search + drift-blended morph
+//   44c3595  statistical (t, L) search across whole trajectories + morph
+//   d3eb396  random-phase fade-in/fade-out (alpha cycles, no path data)
+//   (previous commit) path-aware natural-closure fade schedule
 //
-// (See git history at fb4245d / 9abd1ba / 44c3595 for the full implementation
-// and intermediate iterations.)
+// All of those tried to keep "everything at full alpha at the seam" by
+// either forcing the chaotic trajectory closed (cuts) or by picking fade
+// phases (still visibly mismatched at the seam). The current version
+// accepts the geometric constraint and aligns every trough on the seam.
 // =============================================================================
