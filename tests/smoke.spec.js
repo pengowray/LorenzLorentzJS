@@ -49,11 +49,13 @@ test('render loop advances and attractors evolve', async ({ page }) => {
   const before = await page.evaluate(() => window._app.getState());
   await page.waitForTimeout(1000);
   const after = await page.evaluate(() => window._app.getState());
+  const maxPoints = await page.evaluate(() => window._app.attractors[0].maxPoints);
 
   // Render loop ticked
   expect(after.frame).toBeGreaterThan(before.frame + 10);
-  // First attractor's drawCount grew (or hit the cap)
-  expect(after.attractor0DrawCount).toBeGreaterThan(before.attractor0DrawCount);
+  // drawCount is saturated at maxPoints after pre-warm and stays there.
+  expect(before.attractor0DrawCount).toBe(maxPoints);
+  expect(after.attractor0DrawCount).toBe(maxPoints);
   // Position has moved (chaos)
   expect(after.attractor0Position).not.toEqual(before.attractor0Position);
 });
@@ -66,7 +68,7 @@ test('keyboard toggles flip app flags', async ({ page }) => {
 
   for (const [key, flag] of [
     ['v', 'velColor'], ['n', 'speedup'], ['f', 'fadeOn'], ['.', 'bedhair'],
-    ['x', 'squiggle'], ['m', 'doodle'], [',', 'stripes'], ['q', 'followOne'],
+    [';', 'beam'], ['x', 'squiggle'], ['m', 'doodle'], [',', 'stripes'], ['q', 'followOne'],
   ]) {
     const before = await page.evaluate(f => window._app.flags[f], flag);
     await page.keyboard.press(key);
@@ -107,6 +109,59 @@ test('bedhair warp shader compiles and changes the rendered output', async ({ pa
 
   expect(errors, errors.join('\n')).toEqual([]);
   expect(after).not.toBe(before);
+});
+
+test('beam mode redistributes brightness across the trail', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
+  page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
+
+  await page.goto('/');
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForTimeout(2000); // let velocity vectors fill the buffer
+
+  // Pause so trail growth doesn't confound the measurement.
+  await page.locator('canvas').click();
+  await page.keyboard.press(' ');
+  await page.waitForTimeout(80);
+
+  // Beam brightens some pixels and dims others (one wing of the attractor vs
+  // the other), so net brightness barely shifts. Measure per-pixel diff
+  // between off/on snapshots — that's the test of "did anything change."
+  const measureDiff = () => page.evaluate(() => {
+    const r = window._app.renderer;
+    const gl = r.getContext();
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+
+    const snap = () => {
+      r.render(window._app.scene, window._app.camera);
+      const buf = new Uint8Array(w * h * 4);
+      gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+      return buf;
+    };
+
+    const before = snap();
+    window._app.flags.beam = true;
+    window._app.beamUniform.value = 1.0;
+    const after = snap();
+    window._app.flags.beam = false;
+    window._app.beamUniform.value = 0.0;
+
+    let diff = 0;
+    for (let i = 0; i < before.length; i += 4) {
+      diff += Math.abs(before[i] - after[i])
+            + Math.abs(before[i+1] - after[i+1])
+            + Math.abs(before[i+2] - after[i+2]);
+    }
+    return diff;
+  });
+
+  const diff = await measureDiff();
+  expect(errors, errors.join('\n')).toEqual([]);
+  // Diff is in RGB units summed across all pixels; for a 1280x720 canvas
+  // with even a few hundred bright trail pixels shifting, this should be
+  // in the tens of thousands.
+  expect(diff).toBeGreaterThan(1000);
 });
 
 test('follow-one mode targets attractor[0]', async ({ page }) => {

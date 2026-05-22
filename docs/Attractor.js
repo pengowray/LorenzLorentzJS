@@ -46,7 +46,8 @@ export class Attractor {
 
     this.positions = new Float32Array(maxPoints * 3);
     this.colors = new Float32Array(maxPoints * 3);
-    this.velocities = new Float32Array(maxPoints);
+    this.velocities = new Float32Array(maxPoints);       // scalar dvel per vertex (for velColor)
+    this.velocityVecs = new Float32Array(maxPoints * 3); // (dx, dy, dz) per vertex (for beam)
 
     this.drawCount = 0;
 
@@ -55,6 +56,8 @@ export class Attractor {
       new THREE.BufferAttribute(this.positions, 3).setUsage(THREE.DynamicDrawUsage));
     geometry.setAttribute('color',
       new THREE.BufferAttribute(this.colors, 3).setUsage(THREE.DynamicDrawUsage));
+    geometry.setAttribute('aVelocity',
+      new THREE.BufferAttribute(this.velocityVecs, 3).setUsage(THREE.DynamicDrawUsage));
     geometry.setDrawRange(maxPoints, 0);
 
     const material = makeAttractorMaterial(maxPoints, stripePeriod);
@@ -115,10 +118,12 @@ export class Attractor {
     const stride = n * 3;
     const pos = this.positions;
     const vel = this.velocities;
+    const vvec = this.velocityVecs;
 
     if (this.drawCount > 0) {
       pos.copyWithin(0, stride);
       vel.copyWithin(0, n);
+      vvec.copyWithin(0, stride);
     }
 
     // Per-attractor timescale based on current velocity (port of EvolveSpeedup).
@@ -151,6 +156,9 @@ export class Attractor {
       pos[off + 0] = x;
       pos[off + 1] = y;
       pos[off + 2] = z;
+      vvec[off + 0] = dx;
+      vvec[off + 1] = dy;
+      vvec[off + 2] = dz;
       vel[writeVel + i] = dvel;
     }
 
@@ -159,6 +167,7 @@ export class Attractor {
     this.drawCount = Math.min(this.drawCount + n, this.maxPoints);
     this.geometry.setDrawRange(this.maxPoints - this.drawCount, this.drawCount);
     this.geometry.getAttribute('position').needsUpdate = true;
+    this.geometry.getAttribute('aVelocity').needsUpdate = true;
 
     if (this.velColor) this._updateDynamicColors();
   }
@@ -170,6 +179,7 @@ export class Attractor {
     this.drawCount = 0;
     this.positions.fill(0);
     this.velocities.fill(0);
+    this.velocityVecs.fill(0);
     this.timescale = 1;
     this.lastDVel = 0;
     this.geometry.setDrawRange(this.maxPoints, 0);

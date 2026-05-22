@@ -29,6 +29,7 @@ To host on GitHub Pages: repo Settings → Pages → Source: *Deploy from a bran
 | `v` | Toggle velocity-based coloring |
 | `n` | Toggle per-attractor speedup (timescale ∝ 1/velocity) |
 | `.` | Toggle bedhair warp (the original's Lorentz-flavoured mess, vertex shader) |
+| `;` | Toggle beam (relativistic Doppler beaming: brighter toward camera, dimmer away) |
 | `x` | Toggle squiggle (animated jitter on the head, vertex shader) |
 | `m` | Toggle doodle (monotonic z-offset along the trail, vertex shader) |
 | `,` | Toggle stripes (per-attractor dashed pattern, vertex shader) |
@@ -42,7 +43,11 @@ To host on GitHub Pages: repo Settings → Pages → Source: *Deploy from a bran
 
 All meaningful features from the original sketch are now ported. The three position-warping effects (bedhair, squiggle, doodle) and the per-attractor stripe modulation all stack into the same vertex shader via `LineBasicMaterial.onBeforeCompile` + shared uniforms — see [docs/material.js](docs/material.js).
 
-The `bedhair` effect was originally called "Lorentz warp" in the source sketch — an attempt at a Lorentz-transform-flavoured visual that ended up looking more like messy hair than physics. Future versions of this project will add physics-defensible Lorentz-transform modes alongside it.
+The `bedhair` effect was originally called "Lorentz warp" in the source sketch — an attempt at a Lorentz-transform-flavoured visual that ended up looking more like messy hair than physics.
+
+The `beam` mode is a first physics-defensible Lorentz transform: per-vertex velocity vectors stored alongside positions, combined with the camera position to compute a Doppler-style intensity boost. Particles whose velocity is directed toward the observer brighten; those moving away dim. The effect is visually subtle at the current 1px line width — switching to `Line2` thick lines will make it much more dramatic.
+
+The simulation pre-warms ~280 iterations at startup so the butterfly is fully formed in the first rendered frame (without this it took ~5 seconds for the bright trails to fill).
 
 PNG export (`g`) replaces the original's SVG/PDF export (which was already broken in 3D for the Processing version).
 

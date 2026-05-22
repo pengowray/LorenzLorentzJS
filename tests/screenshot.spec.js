@@ -1,34 +1,33 @@
 import { test } from '@playwright/test';
 
-// Visual sanity check — captures screenshots of each effect for eyeballing.
-// Not a real test; run explicitly with: npx playwright test tests/screenshot.spec.js
+// Visual sanity check — captures screenshots of each mode for eyeballing.
+// Each shot is taken from a freshly-loaded, pre-warmed page so the trail
+// length is identical between modes (no "earlier shots look thinner"
+// confound). Not a real assertion test; run with:
+//   npx playwright test tests/screenshot.spec.js
 
-test('capture screenshots', async ({ page }) => {
-  await page.setViewportSize({ width: 1200, height: 800 });
-  await page.goto('/');
-  await page.waitForFunction(() => window._app?.renderer != null);
-  await page.waitForTimeout(4000);
+const MODES = [
+  { name: 'default',  keys: '' },
+  { name: 'vel-color', keys: 'v' },
+  { name: 'bedhair',   keys: '.' },
+  { name: 'doodle',    keys: 'm' },
+  { name: 'squiggle',  keys: 'x' },
+  { name: 'stripes',   keys: ',' },
+  { name: 'beam',      keys: ';' },
+];
 
-  await page.screenshot({ path: 'test-results/shot-default.png' });
+for (const { name, keys } of MODES) {
+  test(`capture ${name}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1200, height: 800 });
+    await page.goto('/');
+    await page.waitForFunction(() => window._app?.renderer != null);
+    await page.waitForTimeout(800); // a couple of render frames after pre-warm
 
-  const press = async (k) => { await page.locator('canvas').click(); await page.keyboard.press(k); };
-
-  await press('v'); await page.waitForTimeout(300);
-  await page.screenshot({ path: 'test-results/shot-vel-color.png' });
-  await press('v');
-
-  await press('.'); await page.waitForTimeout(300);
-  await page.screenshot({ path: 'test-results/shot-lorentz.png' });
-  await press('.');
-
-  await press('m'); await page.waitForTimeout(300);
-  await page.screenshot({ path: 'test-results/shot-doodle.png' });
-  await press('m');
-
-  await press('x'); await page.waitForTimeout(300);
-  await page.screenshot({ path: 'test-results/shot-squiggle.png' });
-  await press('x');
-
-  await press(','); await page.waitForTimeout(300);
-  await page.screenshot({ path: 'test-results/shot-stripes.png' });
-});
+    if (keys) {
+      await page.locator('canvas').click();
+      for (const k of keys) await page.keyboard.press(k);
+      await page.waitForTimeout(300);
+    }
+    await page.screenshot({ path: `test-results/shot-${name}.png` });
+  });
+}

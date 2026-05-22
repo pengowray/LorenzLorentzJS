@@ -9,6 +9,8 @@ import {
   squiggleCountUniform,
   doodleUniform,
   stripeStrengthUniform,
+  beamUniform,
+  cameraPosUniform,
   timeUniform,
 } from './material.js';
 
@@ -67,6 +69,16 @@ for (let i = 0; i < 120; i++) {
 }
 addAttractor({ dt: DT, steps: 37, maxPoints: 10000, color: { r: 1, g: 1, b: 1 }, stripePeriod: 2 });
 
+// Pre-warm the trails so the butterfly is recognisable from the very first
+// rendered frame. The bright attractors hold 10000 points and only add ~37
+// per frame, so without this they'd take ~4.5s to fill. Running ~280
+// iterations here gives every attractor enough simulated time to settle
+// onto the attractor surface and (for the grey ones) diverge visibly.
+const PREWARM_ITERATIONS = 280;
+for (let i = 0; i < PREWARM_ITERATIONS; i++) {
+  for (const a of attractors) a.evolve();
+}
+
 // State
 const flags = {
   paused: false,
@@ -74,6 +86,7 @@ const flags = {
   velColor: false,
   speedup: false,
   bedhair: false,
+  beam: false,
   squiggle: false,
   doodle: false,
   stripes: false,
@@ -104,6 +117,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'v') { flags.velColor = !flags.velColor; setAll('setVelColor', flags.velColor); }
   else if (e.key === 'n') { flags.speedup = !flags.speedup; setAll('setSpeedup', flags.speedup); }
   else if (e.key === '.') { flags.bedhair = !flags.bedhair; bedhairUniform.value = flags.bedhair ? 1.0 : 0.0; }
+  else if (e.key === ';') { flags.beam = !flags.beam; beamUniform.value = flags.beam ? 1.0 : 0.0; }
   else if (e.key === 'x') {
     flags.squiggle = !flags.squiggle;
     squiggleStrengthUniform.value = flags.squiggle ? 1.0 : 0.0;
@@ -134,6 +148,7 @@ function animate() {
     controls.target.set(a.x, a.y, a.z);
   }
   timeUniform.value = performance.now() / 1000;
+  cameraPosUniform.value.copy(camera.position);
   controls.update();
   renderer.render(scene, camera);
 }
@@ -142,6 +157,7 @@ animate();
 // Exposed for smoke tests.
 window._app = {
   renderer, scene, camera, controls, attractors, flags,
+  beamUniform, bedhairUniform,
   getState() {
     const a0 = attractors[0];
     return {
