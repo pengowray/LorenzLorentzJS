@@ -56,18 +56,20 @@ There are three Lorentz-flavoured modes:
 
 ## Recording a looping animation
 
-Click **record loop** in the SIM section of the control panel (or call `window._app.recordLoop()` from the console). The recorder produces a `lorenz-loop-<timestamp>.webm` that loops seamlessly when replayed.
+Click **record video** in the LOOP section of the control panel (expand it first — it's collapsed by default). The recorder produces a `lorenz-loop-<timestamp>.webm` that loops seamlessly when replayed.
 
-The algorithm (two-pass, when **staggered seams** is on — default):
+The algorithm (when **staggered seams** is on, the default):
 
-1. **Pass 0**: simulate naturally for `V` (default 600) frames, capturing each attractor's full xyz trajectory.
-2. For each attractor, pick its own cycle length `L_i` from the divisors of `V` in `[60, 300]` — the one that minimises `|trajectory(L_i) − trajectory(0)|²`. Because Lorenz orbits aren't periodic, different attractors hit "near-closure" at very different periods. Constraining to divisors of `V` guarantees that each attractor returns to its anchor exactly at frame `V`, so the WebM as a whole also loops.
-3. **Pass 1**: rewind and re-simulate, this time recording the canvas via `MediaRecorder`. Each attractor cycles with its own `L_i`. At the end of every cycle the Lorenz velocity is smoothly blended toward a "drift" velocity that converges exactly to the anchor by the last substep. Because each `L_i` was chosen to close cleanly on its own, the drift correction is a tiny nudge — not a teleport — so the trajectory stays chaos-shaped throughout.
-4. Different `L_i` per attractor → seams distributed across the video timeline instead of bunched at the end.
+1. **Pass 0**: simulate naturally for ~2V (typically 1200) frames without rendering, capturing each attractor's full xyz trajectory.
+2. **Statistical search per attractor**: enumerate every candidate `(t, L)` pair where `L` is one of the divisors of `V` in `[60, 300]` and `t ≥ 300`. Score each by `|traj(t+L) − traj(t)|²` — how close the trajectory is to itself after `L` frames, starting from frame `t`. Keep the top ~80 candidates by closure error, then pick one uniformly at random. This naturally distributes anchor positions around the butterfly because different attractors' best candidates fall at very different parts of phase space.
+3. **Per-attractor advance**: rewind to the original live state and step each attractor independently to its chosen `t`. Different attractors land at different points in their own trajectories.
+4. **Pass 1**: lockstep simulation with `MediaRecorder` capturing the canvas. Each attractor cycles with its own `L_i`. At the end of every cycle the simulation's velocity is smoothly blended toward a drift velocity that lands exactly on the anchor by the last substep. Because each `(t, L)` was chosen so `traj(t+L) ≈ traj(t)`, the drift correction is a tiny nudge — not a teleport — so the trajectory stays chaos-shaped throughout.
 
-In **staggered seams: off** mode every `L_i = V` so every attractor morphs during the final `K` (default 90) frames at once. Useful when debugging the morph itself, since the artifact is concentrated and visible.
+Because the `L_i` values divide `V`, every attractor returns to its own anchor exactly at frame `V`, so the WebM as a whole also loops.
 
-Everything runs in the browser via `MediaRecorder` — no external libraries. Progress is exposed at `window._app.recordingState.progress`.
+In **staggered seams: off** mode the recorder skips Pass 0 entirely. Every attractor anchors at its current live xyz, cycle length = `V` for all, and they all morph during the last `K` (default 90) frames at once. Useful when debugging the morph algorithm itself.
+
+Everything runs in the browser via `MediaRecorder` — no external libraries. Progress is at `window._app.recordingState.progress`.
 
 The simulation pre-warms ~280 iterations at startup so the butterfly is fully formed in the first rendered frame (without this it took ~5 seconds for the bright trails to fill).
 
