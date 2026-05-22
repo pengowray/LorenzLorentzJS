@@ -36,7 +36,7 @@ const SECTIONS = [
   // and unfolding it explicitly keeps the recording UI from cluttering the
   // common-use panel.
   { title: 'loop', collapsed: true, items: [
-    { key: 'S', label: 'staggered seams', flag: 'staggered' },
+    { key: 'S', label: 'staggered fades', flag: 'staggered' },
     { record: true, label: 'record video', flag: 'recording' },
   ] },
 ];

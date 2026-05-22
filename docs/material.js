@@ -66,6 +66,7 @@ uniform vec3 uCameraPos;
 uniform float uMaxSegLen;
 uniform float uCNorm;
 uniform float uTime;
+uniform float uOpacity;
 
 vec3 bedhairWarp(vec3 p, float amount) {
   vec3 range = uMaxLorenz - uMinLorenz;
@@ -122,6 +123,9 @@ vec3 applyWarps(vec3 p, vec3 segStart, vec3 segEnd, float slot) {
 `;
 
 export function makeAttractorMaterial(maxPoints, stripePeriod = 4, linewidth = 1) {
+  // Per-material opacity for the looping recorder's fade-in/fade-out cycles.
+  // Held on userData so the recorder can update it per attractor per frame.
+  const opacityUniform = { value: 1.0 };
   const material = new LineMaterial({
     vertexColors: true,
     transparent: true,
@@ -138,6 +142,7 @@ export function makeAttractorMaterial(maxPoints, stripePeriod = 4, linewidth = 1
     depthWrite: false,
     linewidth, // in screen pixels
   });
+  material.userData.opacityUniform = opacityUniform;
 
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uBedhair = bedhairUniform;
@@ -155,6 +160,7 @@ export function makeAttractorMaterial(maxPoints, stripePeriod = 4, linewidth = 1
     shader.uniforms.uMaxSegLen = maxSegLenUniform;
     shader.uniforms.uCNorm = cNormUniform;
     shader.uniforms.uTime = timeUniform;
+    shader.uniforms.uOpacity = opacityUniform;
 
     shader.vertexShader = HEADER_GLSL + '\n' + shader.vertexShader
       // Warp segment endpoints before they're projected into screen space.
@@ -197,6 +203,10 @@ export function makeAttractorMaterial(maxPoints, stripePeriod = 4, linewidth = 1
           float factor = mix(1.0, clamp(D, 0.0, 6.0), uBeam);
           vColor *= factor;
         }
+
+        // Per-material fade. Used by the recorder to stagger attractors
+        // in and out of the visible loop. Defaults to 1.0 (no fade).
+        vColor *= uOpacity;
         `,
       );
   };

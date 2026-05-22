@@ -29,76 +29,60 @@ function divisorsInRange(N, minL, maxL) {
   return out;
 }
 
-// Search a recorded xyz trajectory for the best candidate loops: pairs
-// (t, L) where the position at frame t+L is close to the position at
-// frame t (so the trajectory naturally returns to near where it was
-// after L frames, starting from t). Returns the top `topN` candidates
-// sorted by closure error.
-function findLoopCandidates(traj, divisors, totalFrames, minStart, topN) {
-  const candidates = [];
-  for (const L of divisors) {
-    const maxT = totalFrames - L;
-    for (let t = minStart; t < maxT; t++) {
-      const i0 = t * 3;
-      const i1 = (t + L) * 3;
-      const dx = traj[i1] - traj[i0];
-      const dy = traj[i1 + 1] - traj[i0 + 1];
-      const dz = traj[i1 + 2] - traj[i0 + 2];
-      const err = dx * dx + dy * dy + dz * dz;
-      candidates.push({ t, L, err });
-    }
-  }
-  candidates.sort((a, b) => a.err - b.err);
-  return candidates.slice(0, Math.min(topN, candidates.length));
+// Smoothstep-shaped fade envelope. Inside the first fadeFrames of the
+// cycle, alpha ramps 0 -> 1. Inside the last fadeFrames, 1 -> 0. Otherwise
+// alpha = 1. `phase` and `L` are in frame units.
+function alphaForPhase(phase, L, fadeFrames) {
+  const ph = ((phase % L) + L) % L;
+  let a;
+  if (ph < fadeFrames) a = ph / fadeFrames;
+  else if (ph >= L - fadeFrames) a = (L - ph) / fadeFrames;
+  else return 1;
+  // smoothstep
+  return a * a * (3 - 2 * a);
 }
 
-// Record a seamlessly-looping WebM.
+// Record a looping WebM.
 //
-// In `staggered` mode (default) we use a statistical search:
+// In `staggered` mode (default):
+//   - Pass 0: simulate V frames naturally with no rendering, capturing each
+//     attractor's full xyz trajectory. This is the "working out the paths
+//     ahead of time" the loop relies on — it lets us pick fade schedules
+//     that put each attractor's invisible phase over the video seam if we
+//     want, and lets us measure how far the live state has drifted by
+//     frame V (so we know which attractors most need to be hidden there).
+//   - Per attractor: pick a cycle length L_i from divisors of V in
+//     [120, 360] and a random phase offset O_i in [0, L_i). Because L_i
+//     divides V, alpha(0) === alpha(V) for every attractor — the loop
+//     boundary is a no-op in alpha space. Per-attractor offsets stagger
+//     the fade moments across the video so at any single frame only a
+//     handful of attractors are in their fade window; "one disappears, a
+//     different one reappears" rather than all fading together.
+//   - Pass 1: rewind to the live state and re-simulate (this time with
+//     MediaRecorder capturing). Each frame, before flush, set every
+//     attractor's per-material uOpacity uniform from its alphaForPhase.
+//     The Lorenz integration is unchanged — no morphing, no teleporting.
+//     The xyz at frame V differs from frame 0 (chaos), but attractors
+//     near a fade trough at the seam are at low alpha so their position
+//     jump is invisible.
 //
-//   Pass 0: simulate ~2V frames naturally with no rendering and record
-//   each attractor's full xyz trajectory.
+// In `staggered: false` mode every attractor stays at alpha = 1 throughout
+// the recording. The video has a hard cut at the seam but the dynamics
+// inside the loop are unmodified — useful as a debugging baseline.
 //
-//   For each attractor: enumerate (start_t, length_L) candidates where L
-//   is one of the divisors of V in [minCycleFrames, maxCycleFrames] and
-//   start_t >= 300 (to leave buffer history). Each candidate is scored by
-//   |trajectory(t+L) - trajectory(t)|^2 — how close the trajectory is to
-//   its starting point after L frames. Keep the top ~80 best candidates
-//   and pick one uniformly at random. This naturally spreads anchor
-//   positions around the butterfly (the top candidates for one attractor
-//   are at very different parts of phase space than another's) while
-//   keeping the closure error tiny.
-//
-//   Per-attractor advance: restore each attractor to its pre-recording
-//   state, then advance just that attractor by its chosen start_t frames
-//   independently so its Pass 1 starting state IS its chosen anchor. No
-//   lockstep here — each attractor walks its own number of steps.
-//
-//   Pass 1: lockstep simulation + recording. Each attractor cycles with
-//   its own L_i; at the end of every cycle the simulation's velocity is
-//   blended smoothly toward a drift velocity that lands exactly on the
-//   anchor (the same chosen-during-Pass-0 xyz). Because the chosen
-//   (t, L) puts the natural end VERY close to the anchor, the morph is
-//   a tiny correction, not a teleport. Because different attractors
-//   chose different t and L, their morph moments are scattered across
-//   the video timeline.
-//
-// In `staggered: false` mode we skip Pass 0 entirely: every attractor
-// anchors at its current live xyz, cycle length = V for all, and they
-// all morph in the last K frames together. Useful for debugging the
-// morph algorithm itself.
+// (The previous force-the-trajectory-into-a-closed-loop algorithm is kept
+// commented at the bottom of this file for reference.)
 export async function recordLoop({
   renderer,
   scene,
   camera,
   attractors,
   durationFrames = 600,
-  morphFrames = 90,
+  fadeFrames = 30,
   fps = 60,
   staggered = true,
-  minCycleFrames = 60,
-  maxCycleFrames = 300,
-  topCandidates = 80,
+  minCycleFrames = 120,
+  maxCycleFrames = 360,
 } = {}) {
   if (recordingState.active) return;
   recordingState.active = true;
@@ -106,28 +90,25 @@ export async function recordLoop({
 
   try {
     const V = durationFrames;
-    const K = morphFrames;
+    const K = fadeFrames;
     const num = attractors.length;
-    const divisors = divisorsInRange(V, minCycleFrames, Math.min(maxCycleFrames, V));
-    if (!divisors.length) divisors.push(V);
 
     const initialStates = attractors.map(a => a.saveState());
 
-    let targets = attractors.map(a => ({ x: a.x, y: a.y, z: a.z }));
-    let cycleLengths = attractors.map(() => V);
-
+    // Pass 0: simulate V frames naturally, recording xyz per attractor per
+    // frame. We don't strictly need the full trajectory for the simple
+    // fade-only loop, but having it on hand lets the fade scheduling be
+    // path-aware (see TODOs below).
+    const trajectories = staggered
+      ? attractors.map(() => new Float32Array(V * 3))
+      : null;
     if (staggered) {
-      // Pass 0: simulate forward ~2V frames and capture full trajectories.
-      const PASS0 = Math.min(Math.max(2 * V, 1200), 2400);
-      const MIN_START = 300; // ensures buffer history is populated at the chosen anchor
-
-      const trajectories = attractors.map(() => new Float32Array(PASS0 * 3));
       for (let i = 0; i < num; i++) {
         trajectories[i][0] = attractors[i].x;
         trajectories[i][1] = attractors[i].y;
         trajectories[i][2] = attractors[i].z;
       }
-      for (let frame = 1; frame < PASS0; frame++) {
+      for (let frame = 1; frame < V; frame++) {
         for (let i = 0; i < num; i++) {
           attractors[i].step();
           const t = trajectories[i];
@@ -136,29 +117,28 @@ export async function recordLoop({
           t[frame * 3 + 2] = attractors[i].z;
         }
       }
-
-      // Per attractor: find the top candidate (t, L) pairs and pick one at
-      // random from the top set. Random sampling within the top-N keeps
-      // anchor positions distributed across the butterfly.
-      const picks = trajectories.map(traj => {
-        const top = findLoopCandidates(traj, divisors, PASS0, MIN_START, topCandidates);
-        if (!top.length) return { t: 0, L: V, err: 0 };
-        return top[Math.floor(Math.random() * top.length)];
-      });
-
-      // Rewind everything, then advance each attractor independently to
-      // its chosen anchor. They're independent simulations so this is
-      // legal — they don't interact through the integrator.
+      // Rewind so Pass 1 runs the same deterministic simulation again,
+      // this time captured to video.
       for (let i = 0; i < num; i++) attractors[i].restoreState(initialStates[i]);
-      for (let i = 0; i < num; i++) {
-        for (let f = 0; f < picks[i].t; f++) attractors[i].step();
-      }
-
-      targets = attractors.map(a => ({ x: a.x, y: a.y, z: a.z }));
-      cycleLengths = picks.map(p => p.L);
     }
 
-    // Pass 1: lockstep simulation + capture.
+    // Per-attractor fade schedule.
+    const divisors = divisorsInRange(V, minCycleFrames, Math.min(maxCycleFrames, V));
+    if (!divisors.length) divisors.push(V);
+    const cycles = attractors.map((_, i) => {
+      if (!staggered) return null; // no fading
+      // Spread L choices across the divisor set so we get cycle-length variety.
+      const L = divisors[i % divisors.length];
+      // Random phase offset so different attractors fade at different times.
+      // TODO (path-aware fade scheduling): bias O_i so attractors whose
+      // trajectory[i] at V differs most from trajectory[i] at 0 get O_i
+      // close to 0 (their trough lands on the video seam, so their seam
+      // jump is invisible). Right now O_i is purely random.
+      const O = Math.floor(Math.random() * L);
+      return { L, O };
+    });
+
+    // Pass 1: lockstep simulate + capture.
     const stream = renderer.domElement.captureStream(fps);
     const chunks = [];
     let mimeType = 'video/webm;codecs=vp9';
@@ -172,18 +152,15 @@ export async function recordLoop({
     recorder.start();
 
     for (let frame = 0; frame < V; frame++) {
+      for (let i = 0; i < num; i++) attractors[i].step();
+
+      // Set per-attractor alpha.
       for (let i = 0; i < num; i++) {
-        const a = attractors[i];
-        const L = cycleLengths[i];
-        const K_local = Math.min(K, Math.floor(L / 2));
-        const phase = frame % L;
-        const morphStart = L - K_local;
-        if (phase >= morphStart) {
-          const j = phase - morphStart;
-          a.step({ target: targets[i], progress: j / K_local, framesTotal: K_local });
-        } else {
-          a.step();
-        }
+        const cycle = cycles[i];
+        const alpha = cycle
+          ? alphaForPhase(frame + cycle.O, cycle.L, K)
+          : 1;
+        attractors[i].material.userData.opacityUniform.value = alpha;
       }
 
       for (let i = 0; i < num; i++) attractors[i].flushGeometry();
@@ -195,6 +172,11 @@ export async function recordLoop({
       await new Promise(r => requestAnimationFrame(r));
     }
 
+    // Reset opacities for normal viewing after the recording is done.
+    for (let i = 0; i < num; i++) {
+      attractors[i].material.userData.opacityUniform.value = 1;
+    }
+
     recorder.stop();
     await stopped;
     const blob = new Blob(chunks, { type: mimeType });
@@ -204,3 +186,18 @@ export async function recordLoop({
     recordingState.progress = 0;
   }
 }
+
+// =============================================================================
+// Earlier approach: force each attractor's trajectory into a closed loop by
+// picking a cycle length L_i (divisor of V) that minimises closure error and
+// applying a velocity-blended drift back to the anchor at end of every cycle.
+//
+// The closure was always small at the anchor but on every full orbit the
+// drift correction visibly bent the trail away from the natural chaos
+// trajectory — a small but persistent "seam cut across" all the way through
+// the recording. Replaced with the fade-based scheme above; preserved here
+// in case the path data + the morph idea is useful again later.
+//
+// (See git history at fb4245d / 9abd1ba / 44c3595 for the full implementation
+// and intermediate iterations.)
+// =============================================================================
