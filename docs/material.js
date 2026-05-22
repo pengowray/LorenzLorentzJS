@@ -41,9 +41,10 @@ export const cameraPosUniform        = { value: new THREE.Vector3() };
 export const maxSegLenUniform        = { value: 0.15 };
 // uCNorm = c * dt_per_segment, combined into one uniform: the retarded-
 // position offset works out to segDir * (dist / uCNorm). Smaller = slower
-// light = more dramatic distortion. 0.08 puts c at ~270 attractor-units/sec,
-// which gives offsets of order the attractor size at typical camera ranges.
-export const cNormUniform            = { value: 0.08 };
+// light = more dramatic distortion. 0.3 gives a subtle warp at default
+// camera distance; the panel exposes a slider to dial it down toward 0.05
+// for a dramatic Terrell-style distortion.
+export const cNormUniform            = { value: 0.3 };
 export const timeUniform             = { value: 0.0 };
 
 const minLorenzUniform = { value: new THREE.Vector3(MIN_LORENZ.x, MIN_LORENZ.y, MIN_LORENZ.z) };

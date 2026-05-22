@@ -12,9 +12,12 @@ import {
   beamUniform,
   delayUniform,
   cameraPosUniform,
+  cNormUniform,
+  maxSegLenUniform,
   timeUniform,
 } from './material.js';
 import { setupPanel } from './panel.js';
+import { recordLoop, recordingState } from './recorder.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -28,6 +31,10 @@ const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerH
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
+// Stop the user from scrolling so far they leave the camera frustum and
+// see nothing. Bounds are loose enough for normal interaction.
+controls.minDistance = 8;
+controls.maxDistance = 2000;
 defaultState(camera, controls);
 
 // Bounds wireframe (toggle with 'b')
@@ -148,6 +155,7 @@ const ACTIONS = {
   ',':  () => { flags.stripes = !flags.stripes; stripeStrengthUniform.value = flags.stripes ? 1.0 : 0.0; },
   'q':  () => { flags.followOne = !flags.followOne; },
   'g':  () => downloadPng(),
+  'R':  () => recordLoop({ renderer, scene, camera, attractors, durationFrames: 600, morphFrames: 90 }),
   'b':  () => { boundsBox.visible = !boundsBox.visible; },
   '0':  () => defaultState(camera, controls),
 };
@@ -166,8 +174,14 @@ setupPanel({
   actions: ACTIONS,
   isOn: (flag) => {
     if (flag === 'boundsBox') return boundsBox.visible;
+    if (flag === 'recording') return recordingState.active;
     return flags[flag];
   },
+  canvas: renderer.domElement,
+  knobs: [
+    { label: 'delay c', uniform: cNormUniform, min: 0.05, max: 1.0, step: 0.01 },
+    { label: 'beam',    uniform: maxSegLenUniform, min: 0.05, max: 0.5, step: 0.005 },
+  ],
 });
 
 window.addEventListener('resize', () => {
@@ -179,6 +193,9 @@ window.addEventListener('resize', () => {
 
 function animate() {
   requestAnimationFrame(animate);
+  // While a recording is in progress, recordLoop() drives the simulation
+  // and rendering itself; we just keep the camera controls live.
+  if (recordingState.active) { controls.update(); return; }
   if (!flags.paused) {
     for (const a of attractors) a.evolve();
   }
@@ -196,7 +213,9 @@ animate();
 // Exposed for smoke tests.
 window._app = {
   renderer, scene, camera, controls, attractors, flags,
-  beamUniform, bedhairUniform,
+  beamUniform, bedhairUniform, delayUniform,
+  recordingState,
+  recordLoop: (opts) => recordLoop({ renderer, scene, camera, attractors, ...opts }),
   getState() {
     const a0 = attractors[0];
     return {

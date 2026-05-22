@@ -52,7 +52,13 @@ There are three Lorentz-flavoured modes:
 
 - **bedhair (`.`)** — the original sketch's decorative warp, kept under its new name. Looks more like messy hair than physics.
 - **beam (`;`)** — Doppler-style intensity modulation. Each segment brightens or dims based on the dot product of its tangent and the line-to-camera direction. Real physics, but subtle visually because it only affects brightness, not geometry.
-- **delay (`'`)** — light-travel-time retarded position. Each trail vertex is displaced by `-segDir × dist / c`, so what you see is where the particle WAS when it emitted the light reaching the camera now. This is the basis of the Terrell-Penrose rotation: a real geometric warp of the butterfly shape, not just brightness.
+- **delay (`'`)** — light-travel-time retarded position. Each trail vertex is displaced by `-segDir × dist / c`, so what you see is where the particle WAS when it emitted the light reaching the camera now. This is the basis of the Terrell-Penrose rotation: a real geometric warp of the butterfly shape, not just brightness. Tunable via the **delay c** knob in the control panel — smaller `c` = slower light = more dramatic distortion.
+
+## Recording a looping animation
+
+Click **record loop** in the SIM section of the control panel (or call `window._app.recordLoop()` from the console). The recorder snapshots each attractor's `(x, y, z)` state at the start, runs ~10 seconds of simulation, and in the last ~1.5 seconds smoothly morphs every attractor's state back to its snapshot via a smoothstep blend. The simulation returns to its initial state at the end of the recording, so the WebM file loops continuously when replayed.
+
+The recording is captured via the browser's `MediaRecorder` API (no external libraries), runs in real time at 60fps, and downloads as `lorenz-loop-<timestamp>.webm` when finished. The progress can be observed via `window._app.recordingState.progress`.
 
 The simulation pre-warms ~280 iterations at startup so the butterfly is fully formed in the first rendered frame (without this it took ~5 seconds for the bright trails to fill).
 

@@ -251,6 +251,19 @@ test('stripes toggle reduces total brightness', async ({ page }) => {
   expect(on).toBeLessThan(off);
 });
 
+test('record loop produces a webm download', async ({ page }) => {
+  test.setTimeout(120000);
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 15000, polling: 100 });
+  await page.waitForTimeout(500);
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download', { timeout: 60000 }),
+    page.evaluate(() => window._app.recordLoop({ durationFrames: 30, morphFrames: 8 })),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/^lorenz-loop-\d+\.webm$/);
+});
+
 test('PNG export produces a downloadable image', async ({ page }) => {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 15000, polling: 100 });
