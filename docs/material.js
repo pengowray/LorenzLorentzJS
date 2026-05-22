@@ -99,7 +99,15 @@ export function makeAttractorMaterial(maxPoints, stripePeriod = 4, linewidth = 1
   const material = new LineMaterial({
     vertexColors: true,
     transparent: true,
-    blending: THREE.AdditiveBlending,
+    // Per-channel max blending (Processing's LIGHTEST). With additive blending
+    // and thick lines, ~3 overlapping orbits saturate to pure white and
+    // wash out the nested-rings detail. MaxEquation pins each pixel at the
+    // brightest contribution it's ever received, which matches the original
+    // sketch and lets per-attractor base colours show through.
+    blending: THREE.CustomBlending,
+    blendEquation: THREE.MaxEquation,
+    blendSrc: THREE.OneFactor,
+    blendDst: THREE.OneFactor,
     depthTest: false,
     depthWrite: false,
     linewidth, // in screen pixels

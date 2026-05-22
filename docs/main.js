@@ -78,10 +78,15 @@ function updateResolutions() {
 }
 updateResolutions();
 
-// Pre-warm the trails so the butterfly is fully formed in frame 1 instead
-// of taking ~5 seconds to fill. step() runs the Lorenz integration without
-// touching the GPU, so this loop is cheap; flushGeometry() pushes to GL.
-const PREWARM_ITERATIONS = 280;
+// Pre-warm the trails. Two purposes:
+//   1. Fill the 10000-point trail buffer (~270 iterations).
+//   2. Let the 120 grey attractors diverge from the bright ones. They all
+//      start within seedJitter=0.01 of each other, and the Lorenz Lyapunov
+//      exponent (~0.9) doubles separation every ~1 simulated second. Going
+//      to ~13 simulated seconds (~1170 iterations) gives a separation of
+//      ~80 units, enough that each grey traces its own visibly distinct
+//      path and they form the wash that surrounds the bright butterfly.
+const PREWARM_ITERATIONS = 1200;
 for (let i = 0; i < PREWARM_ITERATIONS; i++) {
   for (const a of attractors) a.step();
 }
