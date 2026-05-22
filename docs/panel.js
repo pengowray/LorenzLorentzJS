@@ -1,7 +1,7 @@
 // Minimalist control panel. Thin grey borders, monospace, sectioned.
 // Toggle rows dispatch through the shared ACTIONS table from main.js so the
-// keyboard and panel agree on state. Knob rows are bound to shared uniforms
-// and update the rendered visual directly.
+// keyboard and panel agree on state. A knob row sits directly under the
+// toggle it belongs to, bound to a shared uniform.
 
 const SECTIONS = [
   { title: 'view', items: [
@@ -71,13 +71,17 @@ const STYLE = `
 #panel .row.on .s { color: #ddd; }
 #panel .row.action .s { visibility: hidden; }
 #panel .row.record .s { color: #c66; }
+
+/* Knob row, nested under a toggle. The empty first column keeps it aligned
+   with the toggle's label (skipping the key shortcut column). */
 #panel .knob {
   display: grid;
-  grid-template-columns: 1fr 80px 32px;
+  grid-template-columns: 14px 32px 1fr 30px;
   align-items: center;
   gap: 6px;
-  padding: 2px 0;
+  padding: 0 0 1px;
 }
+#panel .knob .knob-label { color: #666; font-size: 9.5px; }
 #panel .knob input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
@@ -98,7 +102,8 @@ const STYLE = `
 }
 #panel .knob input[type="range"]:hover::-webkit-slider-thumb { background: #ddd; }
 #panel .knob input[type="range"]:hover::-moz-range-thumb { background: #ddd; }
-#panel .knob .value { color: #888; text-align: right; font-size: 10px; }
+#panel .knob .value { color: #777; text-align: right; font-size: 9.5px; }
+
 #panel .camgrid {
   display: grid;
   grid-template-columns: repeat(9, 1fr);
@@ -113,14 +118,11 @@ const STYLE = `
   font-size: 10px;
 }
 #panel .cambtn:hover { color: #ddd; border-color: #555; }
-#panel .progress {
-  height: 2px; background: #c66;
-  position: absolute; bottom: -1px; left: 0;
-  transition: width 0.05s linear;
-}
 `;
 
-export function setupPanel({ actions, isOn, canvas, knobs = [], recordingState }) {
+// `knobs` is a map keyed by flag name. Each entry: { uniform, min, max, step,
+// label }. Rendered directly below the matching toggle row.
+export function setupPanel({ actions, isOn, canvas, knobs = {} }) {
   const style = document.createElement('style');
   style.textContent = STYLE;
   document.head.appendChild(style);
@@ -129,6 +131,36 @@ export function setupPanel({ actions, isOn, canvas, knobs = [], recordingState }
   panel.id = 'panel';
 
   const rowsByFlag = new Map();
+
+  function makeKnobRow(knob) {
+    const row = document.createElement('div');
+    row.className = 'knob';
+    row.appendChild(document.createElement('span')); // empty key column
+
+    const label = document.createElement('span');
+    label.className = 'knob-label';
+    label.textContent = knob.label ?? '';
+    row.appendChild(label);
+
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = knob.min;
+    input.max = knob.max;
+    input.step = knob.step;
+    input.value = knob.uniform.value;
+    row.appendChild(input);
+
+    const valueLabel = document.createElement('span');
+    valueLabel.className = 'value';
+    const fmt = () => knob.uniform.value.toFixed(2);
+    valueLabel.textContent = fmt();
+    input.oninput = () => {
+      knob.uniform.value = parseFloat(input.value);
+      valueLabel.textContent = fmt();
+    };
+    row.appendChild(valueLabel);
+    return row;
+  }
 
   for (const section of SECTIONS) {
     const sec = document.createElement('div');
@@ -177,42 +209,12 @@ export function setupPanel({ actions, isOn, canvas, knobs = [], recordingState }
         };
         sec.appendChild(row);
         if (item.flag) rowsByFlag.set(item.flag, { row, s });
-      }
-    }
-    panel.appendChild(sec);
-  }
 
-  // Knobs section
-  if (knobs.length) {
-    const sec = document.createElement('div');
-    sec.className = 'section';
-    const title = document.createElement('div');
-    title.className = 'title';
-    title.textContent = 'knobs';
-    sec.appendChild(title);
-    for (const knob of knobs) {
-      const row = document.createElement('div');
-      row.className = 'knob';
-      const label = document.createElement('span');
-      label.textContent = knob.label;
-      const input = document.createElement('input');
-      input.type = 'range';
-      input.min = knob.min;
-      input.max = knob.max;
-      input.step = knob.step;
-      input.value = knob.uniform.value;
-      const valueLabel = document.createElement('span');
-      valueLabel.className = 'value';
-      const fmt = () => knob.uniform.value.toFixed(2);
-      valueLabel.textContent = fmt();
-      input.oninput = () => {
-        knob.uniform.value = parseFloat(input.value);
-        valueLabel.textContent = fmt();
-      };
-      row.appendChild(label);
-      row.appendChild(input);
-      row.appendChild(valueLabel);
-      sec.appendChild(row);
+        // If this flag has a knob, render it directly below the toggle.
+        if (item.flag && knobs[item.flag]) {
+          sec.appendChild(makeKnobRow(knobs[item.flag]));
+        }
+      }
     }
     panel.appendChild(sec);
   }

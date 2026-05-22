@@ -184,10 +184,10 @@ setupPanel({
     return flags[flag];
   },
   canvas: renderer.domElement,
-  knobs: [
-    { label: 'delay c', uniform: cNormUniform, min: 0.05, max: 1.0, step: 0.01 },
-    { label: 'beam',    uniform: maxSegLenUniform, min: 0.05, max: 0.5, step: 0.005 },
-  ],
+  knobs: {
+    delay: { label: 'c',     uniform: cNormUniform,    min: 0.05, max: 1.0, step: 0.01 },
+    beam:  { label: 'v_max', uniform: maxSegLenUniform, min: 0.05, max: 0.5, step: 0.005 },
+  },
 });
 
 window.addEventListener('resize', () => {
