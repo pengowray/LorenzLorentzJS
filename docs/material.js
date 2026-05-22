@@ -16,6 +16,11 @@ import { MIN_LORENZ, MAX_LORENZ } from './lorenz.js';
 //                      Velocity direction is read from segment endpoints
 //                      (instanceEnd - instanceStart), so no separate velocity
 //                      attribute is needed.
+//   uDelay            geometric Lorentz warp via light-travel time. Each
+//                      endpoint is displaced by -segDir * dist / uCNorm so
+//                      you see the trail where it WAS when it emitted the
+//                      light reaching the camera now (basis of Terrell-
+//                      Penrose rotation).
 //
 // All toggles are shared singletons so flipping one is one assignment regardless
 // of how many attractors are in the scene. `uMaxPoints` and `uStripePeriod`
@@ -28,11 +33,17 @@ export const squiggleCountUniform    = { value: 500.0 };
 export const doodleUniform           = { value: 0.0 };
 export const stripeStrengthUniform   = { value: 0.0 };
 export const beamUniform             = { value: 0.0 };
+export const delayUniform            = { value: 0.0 };
 export const cameraPosUniform        = { value: new THREE.Vector3() };
 // uMaxSegLen calibrates beta = segLen / uMaxSegLen for the beam Doppler
 // formula. With dt=0.0003 and max Lorenz velocity ~500, max segment length
 // is ~0.15 in attractor coords.
 export const maxSegLenUniform        = { value: 0.15 };
+// uCNorm = c * dt_per_segment, combined into one uniform: the retarded-
+// position offset works out to segDir * (dist / uCNorm). Smaller = slower
+// light = more dramatic distortion. 0.08 puts c at ~270 attractor-units/sec,
+// which gives offsets of order the attractor size at typical camera ranges.
+export const cNormUniform            = { value: 0.08 };
 export const timeUniform             = { value: 0.0 };
 
 const minLorenzUniform = { value: new THREE.Vector3(MIN_LORENZ.x, MIN_LORENZ.y, MIN_LORENZ.z) };
@@ -49,8 +60,10 @@ uniform float uDoodleStrength;
 uniform float uStripeStrength;
 uniform float uStripePeriod;
 uniform float uBeam;
+uniform float uDelay;
 uniform vec3 uCameraPos;
 uniform float uMaxSegLen;
+uniform float uCNorm;
 uniform float uTime;
 
 vec3 bedhairWarp(vec3 p, float amount) {
@@ -70,7 +83,9 @@ vec3 bedhairWarp(vec3 p, float amount) {
 float hashf(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
 
 // Apply all position-warping effects to a single endpoint of a segment.
-vec3 applyWarps(vec3 p, float slot) {
+// segStart/segEnd are both endpoints of the current segment, needed for the
+// delay warp (which uses the segment tangent as the velocity vector).
+vec3 applyWarps(vec3 p, vec3 segStart, vec3 segEnd, float slot) {
   vec3 warped = p;
   float fromHead = uMaxPoints - 1.0 - slot;
 
@@ -78,6 +93,16 @@ vec3 applyWarps(vec3 p, float slot) {
     float amount = slot / uMaxPoints;
     vec3 w = bedhairWarp(warped, amount);
     warped = mix(warped, w, uBedhair);
+  }
+  if (uDelay > 0.0) {
+    // Retarded position: where this point WAS when it emitted the light
+    // that's reaching the camera now. offset = velocity * (dist / c), and
+    // velocity = segDir / dt_per_segment, so:
+    //   offset = segDir * dist / (c * dt_per_segment) = segDir * dist / uCNorm.
+    vec3 worldP = (modelMatrix * vec4(warped, 1.0)).xyz;
+    float dist = length(uCameraPos - worldP);
+    vec3 segDir = segEnd - segStart;
+    warped -= segDir * (dist / uCNorm) * uDelay;
   }
   if (uDoodleStrength > 0.0) {
     warped.z += 0.01 * fromHead * uDoodleStrength;
@@ -124,20 +149,22 @@ export function makeAttractorMaterial(maxPoints, stripePeriod = 4, linewidth = 1
     shader.uniforms.uStripeStrength = stripeStrengthUniform;
     shader.uniforms.uStripePeriod = { value: stripePeriod };
     shader.uniforms.uBeam = beamUniform;
+    shader.uniforms.uDelay = delayUniform;
     shader.uniforms.uCameraPos = cameraPosUniform;
     shader.uniforms.uMaxSegLen = maxSegLenUniform;
+    shader.uniforms.uCNorm = cNormUniform;
     shader.uniforms.uTime = timeUniform;
 
     shader.vertexShader = HEADER_GLSL + '\n' + shader.vertexShader
       // Warp segment endpoints before they're projected into screen space.
       .replace(
         'vec4 start = modelViewMatrix * vec4( instanceStart, 1.0 );',
-        `vec3 _warpedStart = applyWarps(instanceStart, float(gl_InstanceID));
+        `vec3 _warpedStart = applyWarps(instanceStart, instanceStart, instanceEnd, float(gl_InstanceID));
          vec4 start = modelViewMatrix * vec4(_warpedStart, 1.0);`,
       )
       .replace(
         'vec4 end = modelViewMatrix * vec4( instanceEnd, 1.0 );',
-        `vec3 _warpedEnd = applyWarps(instanceEnd, float(gl_InstanceID + 1));
+        `vec3 _warpedEnd = applyWarps(instanceEnd, instanceStart, instanceEnd, float(gl_InstanceID + 1));
          vec4 end = modelViewMatrix * vec4(_warpedEnd, 1.0);`,
       )
       // Modulate vertex colour with stripes and beam after the standard

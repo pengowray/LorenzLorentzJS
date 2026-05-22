@@ -10,9 +10,11 @@ import {
   doodleUniform,
   stripeStrengthUniform,
   beamUniform,
+  delayUniform,
   cameraPosUniform,
   timeUniform,
 } from './material.js';
+import { setupPanel } from './panel.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
@@ -100,6 +102,7 @@ const flags = {
   speedup: false,
   bedhair: false,
   beam: false,
+  delay: false,
   squiggle: false,
   doodle: false,
   stripes: false,
@@ -125,26 +128,46 @@ function downloadPng() {
 
 function setAll(method, value) { for (const a of attractors) a[method](value); }
 
-window.addEventListener('keydown', (e) => {
-  if (e.key === ' ')      { flags.paused = !flags.paused; e.preventDefault(); }
-  else if (e.key === 'r') { for (const a of attractors) a.reset(); }
-  else if (e.key === 'f') { flags.fadeOn = !flags.fadeOn; setAll('setFade', flags.fadeOn); }
-  else if (e.key === 'v') { flags.velColor = !flags.velColor; setAll('setVelColor', flags.velColor); }
-  else if (e.key === 'n') { flags.speedup = !flags.speedup; setAll('setSpeedup', flags.speedup); }
-  else if (e.key === '.') { flags.bedhair = !flags.bedhair; bedhairUniform.value = flags.bedhair ? 1.0 : 0.0; }
-  else if (e.key === ';') { flags.beam = !flags.beam; beamUniform.value = flags.beam ? 1.0 : 0.0; }
-  else if (e.key === 'x') {
+// Centralised toggle/action table — keyboard handler and control panel both
+// dispatch through here so they always agree.
+const ACTIONS = {
+  ' ':  () => { flags.paused = !flags.paused; },
+  'r':  () => { for (const a of attractors) a.reset(); },
+  'f':  () => { flags.fadeOn = !flags.fadeOn; setAll('setFade', flags.fadeOn); },
+  'v':  () => { flags.velColor = !flags.velColor; setAll('setVelColor', flags.velColor); },
+  'n':  () => { flags.speedup = !flags.speedup; setAll('setSpeedup', flags.speedup); },
+  '.':  () => { flags.bedhair = !flags.bedhair; bedhairUniform.value = flags.bedhair ? 1.0 : 0.0; },
+  ';':  () => { flags.beam = !flags.beam; beamUniform.value = flags.beam ? 1.0 : 0.0; },
+  "'":  () => { flags.delay = !flags.delay; delayUniform.value = flags.delay ? 1.0 : 0.0; },
+  'x':  () => {
     flags.squiggle = !flags.squiggle;
     squiggleStrengthUniform.value = flags.squiggle ? 1.0 : 0.0;
     if (flags.squiggle) squiggleCountUniform.value = 1 + Math.floor(Math.random() * 1000);
-  }
-  else if (e.key === 'm') { flags.doodle = !flags.doodle; doodleUniform.value = flags.doodle ? 1.0 : 0.0; }
-  else if (e.key === ',') { flags.stripes = !flags.stripes; stripeStrengthUniform.value = flags.stripes ? 1.0 : 0.0; }
-  else if (e.key === 'q') { flags.followOne = !flags.followOne; }
-  else if (e.key === 'g') { downloadPng(); }
-  else if (e.key === 'b') { boundsBox.visible = !boundsBox.visible; }
-  else if (e.key >= '1' && e.key <= '9' && RAW_STATES[e.key]) applyState(camera, controls, RAW_STATES[e.key]);
-  else if (e.key === '0') defaultState(camera, controls);
+  },
+  'm':  () => { flags.doodle = !flags.doodle; doodleUniform.value = flags.doodle ? 1.0 : 0.0; },
+  ',':  () => { flags.stripes = !flags.stripes; stripeStrengthUniform.value = flags.stripes ? 1.0 : 0.0; },
+  'q':  () => { flags.followOne = !flags.followOne; },
+  'g':  () => downloadPng(),
+  'b':  () => { boundsBox.visible = !boundsBox.visible; },
+  '0':  () => defaultState(camera, controls),
+};
+// Camera presets 1..9
+for (const k of '123456789') ACTIONS[k] = () => RAW_STATES[k] && applyState(camera, controls, RAW_STATES[k]);
+
+window.addEventListener('keydown', (e) => {
+  const handler = ACTIONS[e.key];
+  if (!handler) return;
+  if (e.key === ' ') e.preventDefault();
+  handler();
+});
+
+// Wire up the control panel (uses the same ACTIONS table).
+setupPanel({
+  actions: ACTIONS,
+  isOn: (flag) => {
+    if (flag === 'boundsBox') return boundsBox.visible;
+    return flags[flag];
+  },
 });
 
 window.addEventListener('resize', () => {

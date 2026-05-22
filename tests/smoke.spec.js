@@ -70,7 +70,8 @@ test('keyboard toggles flip app flags', async ({ page }) => {
 
   for (const [key, flag] of [
     ['v', 'velColor'], ['n', 'speedup'], ['f', 'fadeOn'], ['.', 'bedhair'],
-    [';', 'beam'], ['x', 'squiggle'], ['m', 'doodle'], [',', 'stripes'], ['q', 'followOne'],
+    [';', 'beam'], ["'", 'delay'], ['x', 'squiggle'], ['m', 'doodle'],
+    [',', 'stripes'], ['q', 'followOne'],
   ]) {
     const before = await page.evaluate(f => window._app.flags[f], flag);
     await page.keyboard.press(key);

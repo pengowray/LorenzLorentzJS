@@ -20,6 +20,8 @@ To host on GitHub Pages: repo Settings → Pages → Source: *Deploy from a bran
 
 ## Controls
 
+There's a control panel on the right side of the page, sectioned into View / Effects / Lorentz / Sim. Each row shows the keyboard shortcut, the label, and a filled (●) or empty (○) state indicator; clicking a row is equivalent to pressing the key. Keyboard shortcuts also work directly.
+
 | Key | Action |
 | --- | --- |
 | Drag / scroll | Orbit / zoom (OrbitControls) |
@@ -27,15 +29,16 @@ To host on GitHub Pages: repo Settings → Pages → Source: *Deploy from a bran
 | `r` | Reset all attractors to seed |
 | `f` | Toggle tail fade |
 | `v` | Toggle velocity-based coloring |
-| `n` | Toggle per-attractor speedup (timescale ∝ 1/velocity) |
-| `.` | Toggle bedhair warp (the original's Lorentz-flavoured mess, vertex shader) |
-| `;` | Toggle beam (relativistic Doppler beaming: brighter toward camera, dimmer away) |
-| `x` | Toggle squiggle (animated jitter on the head, vertex shader) |
-| `m` | Toggle doodle (monotonic z-offset along the trail, vertex shader) |
-| `,` | Toggle stripes (per-attractor dashed pattern, vertex shader) |
-| `q` | Toggle follow-one (camera target chases attractor 0) |
-| `g` | Save current frame as PNG |
+| `n` | Toggle per-attractor speedup |
+| `x` | Toggle squiggle head |
+| `m` | Toggle doodle z-offset |
+| `,` | Toggle stripes |
+| `.` | Toggle bedhair warp (original's Lorentz-flavoured mess) |
+| `;` | Toggle beam (Doppler intensity modulation) |
+| `'` | Toggle delay (light-travel-time geometric warp) |
+| `q` | Toggle follow-one (camera tracks attractor 0) |
 | `b` | Toggle bounds box |
+| `g` | Save current frame as PNG |
 | `1`–`9` | Camera presets (ported from PeasyCam states) |
 | `0` | Default camera |
 
@@ -45,7 +48,11 @@ All meaningful features from the original sketch are now ported. The three posit
 
 The `bedhair` effect was originally called "Lorentz warp" in the source sketch — an attempt at a Lorentz-transform-flavoured visual that ended up looking more like messy hair than physics.
 
-The `beam` mode is a first physics-defensible Lorentz transform: each segment's tangent direction (`instanceEnd - instanceStart`) is dotted with the line-to-camera direction to produce a Doppler-style intensity boost. Particles whose velocity points toward the observer brighten; those moving away dim. Still on the to-do list: a Lorentz-transform mode that actually *warps* the geometry (length contraction / Terrell rotation), not just modulates brightness.
+There are three Lorentz-flavoured modes:
+
+- **bedhair (`.`)** — the original sketch's decorative warp, kept under its new name. Looks more like messy hair than physics.
+- **beam (`;`)** — Doppler-style intensity modulation. Each segment brightens or dims based on the dot product of its tangent and the line-to-camera direction. Real physics, but subtle visually because it only affects brightness, not geometry.
+- **delay (`'`)** — light-travel-time retarded position. Each trail vertex is displaced by `-segDir × dist / c`, so what you see is where the particle WAS when it emitted the light reaching the camera now. This is the basis of the Terrell-Penrose rotation: a real geometric warp of the butterfly shape, not just brightness.
 
 The simulation pre-warms ~280 iterations at startup so the butterfly is fully formed in the first rendered frame (without this it took ~5 seconds for the bright trails to fill).
 

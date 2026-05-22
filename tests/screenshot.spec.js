@@ -14,6 +14,7 @@ const MODES = [
   { name: 'squiggle',  keys: 'x' },
   { name: 'stripes',   keys: ',' },
   { name: 'beam',      keys: ';' },
+  { name: 'delay',     keys: "'" },
 ];
 
 for (const { name, keys } of MODES) {
