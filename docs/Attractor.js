@@ -119,7 +119,20 @@ export class Attractor {
   setSpeedup(on)  { this.speedup = on;  if (!on) this.timescale = 1; }
 
   // Run the Lorenz integration; update linear buffers; do NOT push to GPU.
-  step() {
+  //
+  // `morph` (optional): {
+  //   target: { x, y, z },             // where we want to be at progress = 1
+  //   progress: float in [0, 1],       // position within the morph window
+  //                                    // at the START of this step
+  //   framesTotal,                     // total number of frames in the morph window
+  // }
+  // When morph is provided, each Lorenz substep's velocity is blended via
+  // smoothstep(t) from natural toward a "drift" velocity equal to
+  // (target - current) / time_remaining. At t = 0 the trajectory is purely
+  // natural; at t = 1 it's purely drift and converges exactly to the target
+  // by the last substep. Smooth, chaos-shaped early, target-pulled late —
+  // and the buffer keeps its usual point density throughout.
+  step(morph = null) {
     const n = this.steps;
     const stride = n * 3;
     const pos = this.positions;
@@ -140,10 +153,31 @@ export class Attractor {
     const writeVel = this.maxPoints - n;
     let { x, y, z } = this;
 
+    const totalSubsteps = morph ? morph.framesTotal * n : 0;
+    const elapsedAtStart = morph ? Math.round(morph.progress * totalSubsteps) : 0;
+    const tx = morph?.target.x ?? 0, ty = morph?.target.y ?? 0, tz = morph?.target.z ?? 0;
+
     for (let i = 0; i < n; i++) {
-      const dx = SIGMA * (y - x);
-      const dy = x * (RHO - z) - y;
-      const dz = x * y - BETA * z;
+      const dx_nat = SIGMA * (y - x);
+      const dy_nat = x * (RHO - z) - y;
+      const dz_nat = x * y - BETA * z;
+
+      let dx, dy, dz;
+      if (morph) {
+        const elapsed = elapsedAtStart + i;
+        const remaining = Math.max(1, totalSubsteps - elapsed);
+        const remainingTime = remaining * dtt;
+        const dx_drift = (tx - x) / remainingTime;
+        const dy_drift = (ty - y) / remainingTime;
+        const dz_drift = (tz - z) / remainingTime;
+        const t = elapsed / totalSubsteps;
+        const k = t * t * (3 - 2 * t); // smoothstep
+        dx = (1 - k) * dx_nat + k * dx_drift;
+        dy = (1 - k) * dy_nat + k * dy_drift;
+        dz = (1 - k) * dz_nat + k * dz_drift;
+      } else {
+        dx = dx_nat; dy = dy_nat; dz = dz_nat;
+      }
 
       const dvel = Math.cbrt(dx * dx + dy * dy + dz * dz);
       if (dvel > this.maxDVel) this.maxDVel = dvel;
@@ -164,6 +198,32 @@ export class Attractor {
     this.drawCount = Math.min(this.drawCount + n, this.maxPoints);
 
     if (this.velColor) this._updateDynamicColors();
+  }
+
+  // Snapshot/restore for the recorder's two-pass loop. Captures everything
+  // the simulation needs to be deterministically rewound to this point.
+  saveState() {
+    return {
+      x: this.x, y: this.y, z: this.z,
+      positions: new Float32Array(this.positions),
+      colors: new Float32Array(this.colors),
+      velocities: new Float32Array(this.velocities),
+      drawCount: this.drawCount,
+      timescale: this.timescale,
+      lastDVel: this.lastDVel,
+      maxDVel: this.maxDVel,
+    };
+  }
+
+  restoreState(s) {
+    this.x = s.x; this.y = s.y; this.z = s.z;
+    this.positions.set(s.positions);
+    this.colors.set(s.colors);
+    this.velocities.set(s.velocities);
+    this.drawCount = s.drawCount;
+    this.timescale = s.timescale;
+    this.lastDVel = s.lastDVel;
+    this.maxDVel = s.maxDVel;
   }
 
   // Copy the linear buffers into the interleaved segment buffer that Line2

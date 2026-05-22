@@ -31,6 +31,7 @@ const SECTIONS = [
     { key: ' ', label: 'pause',       flag: 'paused', keyDisplay: '⎵' },
     { key: 'r', label: 'reset trails' },
     { key: 'g', label: 'save png' },
+    { key: 'S', label: 'staggered seams', flag: 'staggered' },
     { record: true, label: 'record loop', flag: 'recording' },
   ] },
 ];

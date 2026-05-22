@@ -114,6 +114,7 @@ const flags = {
   doodle: false,
   stripes: false,
   followOne: false,
+  staggered: true, // recorder loop morph mode; off = debug (synced)
 };
 
 function downloadPng() {
@@ -155,7 +156,12 @@ const ACTIONS = {
   ',':  () => { flags.stripes = !flags.stripes; stripeStrengthUniform.value = flags.stripes ? 1.0 : 0.0; },
   'q':  () => { flags.followOne = !flags.followOne; },
   'g':  () => downloadPng(),
-  'R':  () => recordLoop({ renderer, scene, camera, attractors, durationFrames: 600, morphFrames: 90 }),
+  'R':  () => recordLoop({
+    renderer, scene, camera, attractors,
+    durationFrames: 600, morphFrames: 90,
+    staggered: flags.staggered,
+  }),
+  'S':  () => { flags.staggered = !flags.staggered; },
   'b':  () => { boundsBox.visible = !boundsBox.visible; },
   '0':  () => defaultState(camera, controls),
 };
