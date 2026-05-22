@@ -57,3 +57,30 @@ test('render loop advances and attractors evolve', async ({ page }) => {
   // Position has moved (chaos)
   expect(after.attractor0Position).not.toEqual(before.attractor0Position);
 });
+
+test('keyboard toggles flip app flags', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  const canvas = page.locator('canvas');
+  await canvas.click(); // ensure window has focus
+
+  for (const [key, flag] of [['v', 'velColor'], ['n', 'speedup'], ['f', 'fadeOn']]) {
+    const before = await page.evaluate(f => window._app.flags[f], flag);
+    await page.keyboard.press(key);
+    const after = await page.evaluate(f => window._app.flags[f], flag);
+    expect(after, `pressing ${key} should toggle ${flag}`).toBe(!before);
+  }
+});
+
+test('speedup adjusts timescale away from 1', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForTimeout(500); // accumulate some velocity history
+
+  expect(await page.evaluate(() => window._app.attractors[0].timescale)).toBe(1);
+  await page.locator('canvas').click();
+  await page.keyboard.press('n');
+  await page.waitForTimeout(300);
+  const ts = await page.evaluate(() => window._app.attractors[0].timescale);
+  expect(ts).not.toBe(1);
+});

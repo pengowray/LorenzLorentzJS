@@ -59,26 +59,22 @@ for (let i = 0; i < 120; i++) {
 addAttractor({ dt: DT, steps: 37, maxPoints: 10000, color: { r: 1, g: 1, b: 1 } });
 
 // State
-let paused = false;
-let fadeOn = true;
+const flags = {
+  paused: false,
+  fadeOn: true,
+  velColor: false,
+  speedup: false,
+};
 
-function resetAll() {
-  for (const a of attractors) {
-    a.x = -12.561073 + (Math.random() * 2 - 1) * 0.01;
-    a.y = -17.21439  + (Math.random() * 2 - 1) * 0.01;
-    a.z =  26.546    + (Math.random() * 2 - 1) * 0.01;
-    a.drawCount = 0;
-    a.positions.fill(0);
-    a.geometry.setDrawRange(a.maxPoints, 0);
-    a.geometry.getAttribute('position').needsUpdate = true;
-  }
-}
+function setAll(method, value) { for (const a of attractors) a[method](value); }
 
 window.addEventListener('keydown', (e) => {
-  if (e.key === ' ') { paused = !paused; e.preventDefault(); }
-  else if (e.key === 'r') resetAll();
-  else if (e.key === 'f') { fadeOn = !fadeOn; for (const a of attractors) a.setFade(fadeOn); }
-  else if (e.key === 'b') boundsBox.visible = !boundsBox.visible;
+  if (e.key === ' ')      { flags.paused = !flags.paused; e.preventDefault(); }
+  else if (e.key === 'r') { for (const a of attractors) a.reset(); }
+  else if (e.key === 'f') { flags.fadeOn = !flags.fadeOn; setAll('setFade', flags.fadeOn); }
+  else if (e.key === 'v') { flags.velColor = !flags.velColor; setAll('setVelColor', flags.velColor); }
+  else if (e.key === 'n') { flags.speedup = !flags.speedup; setAll('setSpeedup', flags.speedup); }
+  else if (e.key === 'b') { boundsBox.visible = !boundsBox.visible; }
   else if (e.key >= '1' && e.key <= '9' && RAW_STATES[e.key]) applyState(camera, controls, RAW_STATES[e.key]);
   else if (e.key === '0') defaultState(camera, controls);
 });
@@ -91,7 +87,7 @@ window.addEventListener('resize', () => {
 
 function animate() {
   requestAnimationFrame(animate);
-  if (!paused) {
+  if (!flags.paused) {
     for (const a of attractors) a.evolve();
   }
   controls.update();
@@ -101,7 +97,7 @@ animate();
 
 // Exposed for smoke tests.
 window._app = {
-  renderer, scene, camera, controls, attractors,
+  renderer, scene, camera, controls, attractors, flags,
   getState() {
     const a0 = attractors[0];
     return {
@@ -109,8 +105,8 @@ window._app = {
       attractorCount: attractors.length,
       attractor0DrawCount: a0.drawCount,
       attractor0Position: [a0.x, a0.y, a0.z],
-      paused,
-      fadeOn,
+      attractor0Timescale: a0.timescale,
+      ...flags,
     };
   },
 };

@@ -26,14 +26,26 @@ To host on GitHub Pages: repo Settings → Pages → Source: *Deploy from a bran
 | Space | Pause / resume |
 | `r` | Reset all attractors to seed |
 | `f` | Toggle tail fade |
+| `v` | Toggle velocity-based coloring |
+| `n` | Toggle per-attractor speedup (timescale ∝ 1/velocity) |
 | `b` | Toggle bounds box |
 | `1`–`9` | Camera presets (ported from PeasyCam states) |
 | `0` | Default camera |
 
 ## Status
 
-Working: core attractor evolution, multi-attractor rendering, additive blending, tail fade, OrbitControls, bounds box, camera presets.
+Working: core attractor evolution, multi-attractor rendering, additive blending, tail fade, velocity coloring, per-attractor speedup, OrbitControls, bounds box, camera presets.
 
-Not yet ported from the original: velocity-based coloring (`v`), squiggle head (`x`), Lorentz warp toggle (`.`), per-attractor speedup (`n`), stripes (`,`), doodle z-offset (`m`), follow-one-attractor (`q`), SVG export.
+Not yet ported from the original: squiggle head (`x`), Lorentz warp toggle (`.`), stripes (`,`), doodle z-offset (`m`), follow-one-attractor (`q`), SVG export. The Lorentz warp and squiggle/doodle effects mutate vertex positions in a way that's most naturally expressed in a vertex shader; they'll come in a later pass.
+
+## Tests
+
+```sh
+npm install
+npx playwright install chromium
+npm test
+```
+
+Smoke tests live in [tests/smoke.spec.js](tests/smoke.spec.js) and run against a tiny static server in [scripts/serve.js](scripts/serve.js).
 
 Camera presets are ported from PeasyCam JSON but may need tuning — Processing is Y-down, Three.js is Y-up, and OrbitControls preserves a fixed up axis, so orientations may not match exactly.

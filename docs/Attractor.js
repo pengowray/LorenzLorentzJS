@@ -1,11 +1,21 @@
 import * as THREE from 'three';
 import { SIGMA, RHO, BETA } from './lorenz.js';
 
+const TAIL = 100;          // length of the fade-out segment at the oldest end
+const SEED_VEL_MAX = 60;   // initial guess for maxDVel; grows from observation
+
 // A single Lorenz attractor with a trailing line ribbon.
-// Uses a flat Float32Array as a sliding window: each Evolve() produces `steps`
-// new points, the buffer is shifted left by that many slots (copyWithin), and
-// the new points are written at the tail. So the tail of the buffer is always
-// the most-recent point, the head is the oldest still-shown point.
+//
+// Buffer layout: three Float32Arrays (positions, colors, velocities) sized to
+// maxPoints, used as a sliding window. evolve() runs `steps` Lorenz substeps,
+// shifts the buffers left by `steps` slots (copyWithin), and writes the new
+// points at the tail. Slot N-1 is always the most-recent point.
+//
+// Colors come in two modes:
+//   - static: precomputed from a fade-tail ramp (slot index -> brightness).
+//     Used when velocity coloring is off; no per-frame work.
+//   - dynamic: rebuilt every frame as fade * velFactor, using per-vertex
+//     velocities that shift with the buffer. Used when velColor is on.
 export class Attractor {
   constructor({
     maxPoints = 10000,
@@ -19,19 +29,24 @@ export class Attractor {
     this.dt = dt;
     this.color = color;
 
-    // Lorenz state. Seed near a point that's already on the attractor so we
-    // don't have to "fall in" from origin (same seed as Attractor.pde).
+    // Lorenz state, seeded near an on-attractor point (same as the original).
     this.x = -12.561073 + (Math.random() * 2 - 1) * seedJitter;
     this.y = -17.21439  + (Math.random() * 2 - 1) * seedJitter;
     this.z =  26.546    + (Math.random() * 2 - 1) * seedJitter;
+
+    this.timescale = 1;
+    this.lastDVel = 0;
+    this.maxDVel = SEED_VEL_MAX;
+
+    this.fadeOn = true;
+    this.velColor = false;
+    this.speedup = false;
 
     this.positions = new Float32Array(maxPoints * 3);
     this.colors = new Float32Array(maxPoints * 3);
     this.velocities = new Float32Array(maxPoints);
 
-    this._buildColors(/*fade*/ true, /*velColor*/ false);
-
-    this.drawCount = 0; // grows from 0 to maxPoints
+    this.drawCount = 0;
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position',
@@ -51,62 +66,117 @@ export class Attractor {
     this.geometry = geometry;
     this.material = material;
     this.line = new THREE.Line(geometry, material);
-    this.line.frustumCulled = false; // bounds shift over time
+    this.line.frustumCulled = false;
+
+    this._rebuildStaticColors();
   }
 
-  // Precompute the per-slot color ramp. Slot 0 is the oldest point (fades to
-  // black if `fade`), slot maxPoints-1 is the newest (full brightness).
-  _buildColors(fade, velColor) {
-    const TAIL = 100; // matches original
+  _rebuildStaticColors() {
     const n = this.maxPoints;
     const c = this.colors;
-    const r = this.color.r, g = this.color.g, b = this.color.b;
+    const { r, g, b } = this.color;
     for (let i = 0; i < n; i++) {
-      let intensity = 1;
-      if (fade) {
-        const fromEnd = n - 1 - i; // 0 = newest
-        if (fromEnd < TAIL) intensity = fromEnd / TAIL;
-      }
-      c[i * 3 + 0] = r * intensity;
-      c[i * 3 + 1] = g * intensity;
-      c[i * 3 + 2] = b * intensity;
+      const fade = this._fadeAtSlot(i);
+      c[i * 3 + 0] = r * fade;
+      c[i * 3 + 1] = g * fade;
+      c[i * 3 + 2] = b * fade;
     }
-    if (this.geometry) this.geometry.getAttribute('color').needsUpdate = true;
+    this.geometry.getAttribute('color').needsUpdate = true;
   }
 
-  setFade(fade) { this._buildColors(fade, false); }
+  _updateDynamicColors() {
+    const n = this.maxPoints;
+    const c = this.colors;
+    const v = this.velocities;
+    const maxV = this.maxDVel;
+    const { r, g, b } = this.color;
+    for (let i = 0; i < n; i++) {
+      const fade = this._fadeAtSlot(i);
+      const vNorm = Math.min(1, v[i] / maxV);
+      const velFactor = 0.2 + 0.8 * vNorm;
+      const f = fade * velFactor;
+      c[i * 3 + 0] = r * f;
+      c[i * 3 + 1] = g * f;
+      c[i * 3 + 2] = b * f;
+    }
+    this.geometry.getAttribute('color').needsUpdate = true;
+  }
+
+  _fadeAtSlot(i) {
+    if (!this.fadeOn) return 1;
+    const fromEnd = this.maxPoints - 1 - i;
+    return fromEnd < TAIL ? fromEnd / TAIL : 1;
+  }
+
+  setFade(on)     { this.fadeOn = on;   if (!this.velColor) this._rebuildStaticColors(); }
+  setVelColor(on) { this.velColor = on; if (!on) this._rebuildStaticColors(); }
+  setSpeedup(on)  { this.speedup = on;  if (!on) this.timescale = 1; }
 
   evolve() {
     const n = this.steps;
     const stride = n * 3;
     const pos = this.positions;
+    const vel = this.velocities;
 
-    // Shift older points toward index 0; the last `n` slots will be overwritten.
-    if (this.drawCount > 0) pos.copyWithin(0, stride);
+    if (this.drawCount > 0) {
+      pos.copyWithin(0, stride);
+      vel.copyWithin(0, n);
+    }
 
-    const writeOffset = (this.maxPoints - n) * 3;
-    let { x, y, z, dt } = this;
+    // Per-attractor timescale based on current velocity (port of EvolveSpeedup).
+    if (this.speedup) {
+      const vN = (this.lastDVel / this.maxDVel) * 0.99 + 1e-9;
+      this.timescale = Math.min(400, Math.max(0.05, 0.5 / vN));
+    }
+    const dtt = this.dt * this.timescale;
+
+    const writePos = (this.maxPoints - n) * 3;
+    const writeVel = this.maxPoints - n;
+    let { x, y, z } = this;
 
     for (let i = 0; i < n; i++) {
       const dx = SIGMA * (y - x);
       const dy = x * (RHO - z) - y;
       const dz = x * y - BETA * z;
-      x += dx * dt;
-      y += dy * dt;
-      z += dz * dt;
 
-      const off = writeOffset + i * 3;
+      // dvel: cube root of squared velocity magnitude, per the original sketch
+      // (compresses the dynamic range visually).
+      const dvel = Math.cbrt(dx * dx + dy * dy + dz * dz);
+      if (dvel > this.maxDVel) this.maxDVel = dvel;
+      this.lastDVel = dvel;
+
+      x += dx * dtt;
+      y += dy * dtt;
+      z += dz * dtt;
+
+      const off = writePos + i * 3;
       pos[off + 0] = x;
       pos[off + 1] = y;
       pos[off + 2] = z;
+      vel[writeVel + i] = dvel;
     }
 
     this.x = x; this.y = y; this.z = z;
 
     this.drawCount = Math.min(this.drawCount + n, this.maxPoints);
-    // Draw the most recent `drawCount` vertices (i.e. the tail of the buffer).
     this.geometry.setDrawRange(this.maxPoints - this.drawCount, this.drawCount);
     this.geometry.getAttribute('position').needsUpdate = true;
+
+    if (this.velColor) this._updateDynamicColors();
+  }
+
+  reset(seedJitter = 0.01) {
+    this.x = -12.561073 + (Math.random() * 2 - 1) * seedJitter;
+    this.y = -17.21439  + (Math.random() * 2 - 1) * seedJitter;
+    this.z =  26.546    + (Math.random() * 2 - 1) * seedJitter;
+    this.drawCount = 0;
+    this.positions.fill(0);
+    this.velocities.fill(0);
+    this.timescale = 1;
+    this.lastDVel = 0;
+    this.geometry.setDrawRange(this.maxPoints, 0);
+    this.geometry.getAttribute('position').needsUpdate = true;
+    if (!this.velColor) this._rebuildStaticColors();
   }
 
   dispose() {
