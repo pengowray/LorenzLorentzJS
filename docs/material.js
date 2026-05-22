@@ -4,7 +4,9 @@ import { MIN_LORENZ, MAX_LORENZ } from './lorenz.js';
 // LineBasicMaterial patched at compile time with three position-warping
 // effects, all toggleable via shared uniforms:
 //
-//   uLorentz          relativistic warp along the trail (the namesake effect)
+//   uBedhair          messy decorative warp that pulls the trail apart at its
+//                      head and tail (an attempt at a Lorentz-transform-flavoured
+//                      effect that ended up looking more like bedhead)
 //   uSquiggleStrength time-animated random jitter on the head of the trail
 //   uDoodleStrength   monotonic z-offset growing toward the trail tail
 //
@@ -13,7 +15,7 @@ import { MIN_LORENZ, MAX_LORENZ } from './lorenz.js';
 // material (set at compile time) since each attractor sizes its buffer
 // differently.
 
-export const lorentzUniform          = { value: 0.0 };
+export const bedhairUniform          = { value: 0.0 };
 export const squiggleStrengthUniform = { value: 0.0 };
 export const squiggleCountUniform    = { value: 500.0 };
 export const doodleUniform           = { value: 0.0 };
@@ -24,7 +26,7 @@ const minLorenzUniform = { value: new THREE.Vector3(MIN_LORENZ.x, MIN_LORENZ.y, 
 const maxLorenzUniform = { value: new THREE.Vector3(MAX_LORENZ.x, MAX_LORENZ.y, MAX_LORENZ.z) };
 
 const HEADER_GLSL = /* glsl */ `
-uniform float uLorentz;
+uniform float uBedhair;
 uniform vec3 uMinLorenz;
 uniform vec3 uMaxLorenz;
 uniform float uMaxPoints;
@@ -35,7 +37,7 @@ uniform float uStripeStrength;
 uniform float uStripePeriod;
 uniform float uTime;
 
-vec3 lorentzWarp(vec3 p, float amount) {
+vec3 bedhairWarp(vec3 p, float amount) {
   vec3 range = uMaxLorenz - uMinLorenz;
   vec3 n = clamp((p - uMinLorenz) / range, 0.001, 0.999);
   vec3 d = n - vec3(0.5);
@@ -57,10 +59,10 @@ const TRANSFORM_GLSL = /* glsl */ `
   // fromHead: 0 at the newest point (head of the trail), grows toward the tail.
   float fromHead = uMaxPoints - 1.0 - float(gl_VertexID);
 
-  if (uLorentz > 0.0) {
+  if (uBedhair > 0.0) {
     float amount = float(gl_VertexID) / uMaxPoints;
-    vec3 warped = lorentzWarp(transformed, amount);
-    transformed = mix(transformed, warped, uLorentz);
+    vec3 warped = bedhairWarp(transformed, amount);
+    transformed = mix(transformed, warped, uBedhair);
   }
 
   if (uDoodleStrength > 0.0) {
@@ -90,7 +92,7 @@ export function makeAttractorMaterial(maxPoints, stripePeriod = 4) {
   });
 
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.uLorentz = lorentzUniform;
+    shader.uniforms.uBedhair = bedhairUniform;
     shader.uniforms.uMinLorenz = minLorenzUniform;
     shader.uniforms.uMaxLorenz = maxLorenzUniform;
     shader.uniforms.uMaxPoints = { value: maxPoints };

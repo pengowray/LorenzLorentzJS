@@ -4,7 +4,7 @@ import { Attractor } from './Attractor.js';
 import { MIN_LORENZ, MAX_LORENZ } from './lorenz.js';
 import { RAW_STATES, applyState, defaultState } from './cameraStates.js';
 import {
-  lorentzUniform,
+  bedhairUniform,
   squiggleStrengthUniform,
   squiggleCountUniform,
   doodleUniform,
@@ -73,7 +73,7 @@ const flags = {
   fadeOn: true,
   velColor: false,
   speedup: false,
-  lorentz: false,
+  bedhair: false,
   squiggle: false,
   doodle: false,
   stripes: false,
@@ -103,7 +103,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'f') { flags.fadeOn = !flags.fadeOn; setAll('setFade', flags.fadeOn); }
   else if (e.key === 'v') { flags.velColor = !flags.velColor; setAll('setVelColor', flags.velColor); }
   else if (e.key === 'n') { flags.speedup = !flags.speedup; setAll('setSpeedup', flags.speedup); }
-  else if (e.key === '.') { flags.lorentz = !flags.lorentz; lorentzUniform.value = flags.lorentz ? 1.0 : 0.0; }
+  else if (e.key === '.') { flags.bedhair = !flags.bedhair; bedhairUniform.value = flags.bedhair ? 1.0 : 0.0; }
   else if (e.key === 'x') {
     flags.squiggle = !flags.squiggle;
     squiggleStrengthUniform.value = flags.squiggle ? 1.0 : 0.0;

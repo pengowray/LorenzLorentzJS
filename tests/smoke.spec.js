@@ -65,7 +65,7 @@ test('keyboard toggles flip app flags', async ({ page }) => {
   await canvas.click(); // ensure window has focus
 
   for (const [key, flag] of [
-    ['v', 'velColor'], ['n', 'speedup'], ['f', 'fadeOn'], ['.', 'lorentz'],
+    ['v', 'velColor'], ['n', 'speedup'], ['f', 'fadeOn'], ['.', 'bedhair'],
     ['x', 'squiggle'], ['m', 'doodle'], [',', 'stripes'], ['q', 'followOne'],
   ]) {
     const before = await page.evaluate(f => window._app.flags[f], flag);
@@ -75,7 +75,7 @@ test('keyboard toggles flip app flags', async ({ page }) => {
   }
 });
 
-test('lorentz warp shader compiles and changes the rendered output', async ({ page }) => {
+test('bedhair warp shader compiles and changes the rendered output', async ({ page }) => {
   const errors = [];
   page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
   page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
