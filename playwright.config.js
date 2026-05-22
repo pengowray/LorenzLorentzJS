@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
-  timeout: 30000,
+  timeout: 90000, // Line2 + 122 attractors is slow in headless Chromium WebGL
   retries: 0,
   reporter: [['list']],
   use: {

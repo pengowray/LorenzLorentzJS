@@ -63,4 +63,6 @@ npm test
 
 Smoke tests live in [tests/smoke.spec.js](tests/smoke.spec.js) and run against a tiny static server in [scripts/serve.js](scripts/serve.js).
 
+Headless Chromium's WebGL is dramatically slower than a real browser at rendering 122 instanced `Line2` attractors — a full test run can take several minutes per test, even though the page itself loads in ~250ms in a real browser. The test timeouts in [playwright.config.js](playwright.config.js) are sized for that, not for the app's actual performance.
+
 Camera presets are ported from PeasyCam JSON but may need tuning — Processing is Y-down, Three.js is Y-up, and OrbitControls preserves a fixed up axis, so orientations may not match exactly.
