@@ -98,3 +98,19 @@ function animate() {
   renderer.render(scene, camera);
 }
 animate();
+
+// Exposed for smoke tests.
+window._app = {
+  renderer, scene, camera, controls, attractors,
+  getState() {
+    const a0 = attractors[0];
+    return {
+      frame: renderer.info.render.frame,
+      attractorCount: attractors.length,
+      attractor0DrawCount: a0.drawCount,
+      attractor0Position: [a0.x, a0.y, a0.z],
+      paused,
+      fadeOn,
+    };
+  },
+};

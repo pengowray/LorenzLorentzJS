@@ -1,0 +1,13 @@
+{
+  "name": "lorenz-lorentz-js",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "serve": "node scripts/serve.js docs 4365",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  }
+}

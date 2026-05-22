@@ -1,0 +1,59 @@
+import { test, expect } from '@playwright/test';
+
+// All tests rely on window._app being set by main.js at startup.
+// _app exposes { renderer, scene, attractors, getState() } for inspection.
+
+test('loads without console or page errors', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
+  page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
+
+  await page.goto('/');
+  await expect(page.locator('canvas')).toBeVisible();
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForTimeout(1500);
+
+  expect(errors, errors.join('\n')).toEqual([]);
+});
+
+test('canvas has non-black pixels', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  // Let a few hundred frames accumulate so the trail is visible
+  await page.waitForTimeout(1500);
+
+  // Sample pixels straight from the WebGL canvas via the app's renderer.
+  const stats = await page.evaluate(() => {
+    const r = window._app.renderer;
+    const gl = r.getContext();
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+    // Re-render so the back buffer is fresh, then read pixels before swap.
+    r.render(window._app.scene, window._app.camera);
+    const pixels = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+    let bright = 0;
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i] + pixels[i+1] + pixels[i+2] > 10) bright++;
+    }
+    return { totalPixels: w * h, brightPixels: bright };
+  });
+
+  // Should be at least a few hundred lit pixels from the attractor lines.
+  expect(stats.brightPixels).toBeGreaterThan(200);
+});
+
+test('render loop advances and attractors evolve', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+
+  const before = await page.evaluate(() => window._app.getState());
+  await page.waitForTimeout(1000);
+  const after = await page.evaluate(() => window._app.getState());
+
+  // Render loop ticked
+  expect(after.frame).toBeGreaterThan(before.frame + 10);
+  // First attractor's drawCount grew (or hit the cap)
+  expect(after.attractor0DrawCount).toBeGreaterThan(before.attractor0DrawCount);
+  // Position has moved (chaos)
+  expect(after.attractor0Position).not.toEqual(before.attractor0Position);
+});
