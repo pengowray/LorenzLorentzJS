@@ -17,6 +17,7 @@ export const lorentzUniform          = { value: 0.0 };
 export const squiggleStrengthUniform = { value: 0.0 };
 export const squiggleCountUniform    = { value: 500.0 };
 export const doodleUniform           = { value: 0.0 };
+export const stripeStrengthUniform   = { value: 0.0 };
 export const timeUniform             = { value: 0.0 };
 
 const minLorenzUniform = { value: new THREE.Vector3(MIN_LORENZ.x, MIN_LORENZ.y, MIN_LORENZ.z) };
@@ -30,6 +31,8 @@ uniform float uMaxPoints;
 uniform float uSquiggleStrength;
 uniform float uSquiggleCount;
 uniform float uDoodleStrength;
+uniform float uStripeStrength;
+uniform float uStripePeriod;
 uniform float uTime;
 
 vec3 lorentzWarp(vec3 p, float amount) {
@@ -77,7 +80,7 @@ const TRANSFORM_GLSL = /* glsl */ `
   }
 `;
 
-export function makeAttractorMaterial(maxPoints) {
+export function makeAttractorMaterial(maxPoints, stripePeriod = 4) {
   const material = new THREE.LineBasicMaterial({
     vertexColors: true,
     transparent: true,
@@ -94,12 +97,22 @@ export function makeAttractorMaterial(maxPoints) {
     shader.uniforms.uSquiggleStrength = squiggleStrengthUniform;
     shader.uniforms.uSquiggleCount = squiggleCountUniform;
     shader.uniforms.uDoodleStrength = doodleUniform;
+    shader.uniforms.uStripeStrength = stripeStrengthUniform;
+    shader.uniforms.uStripePeriod = { value: stripePeriod };
     shader.uniforms.uTime = timeUniform;
 
-    shader.vertexShader = HEADER_GLSL + '\n' + shader.vertexShader.replace(
-      '#include <begin_vertex>',
-      TRANSFORM_GLSL,
-    );
+    shader.vertexShader = HEADER_GLSL + '\n' + shader.vertexShader
+      .replace('#include <begin_vertex>', TRANSFORM_GLSL)
+      .replace(
+        '#include <color_vertex>',
+        /* glsl */ `
+        #include <color_vertex>
+        if (uStripeStrength > 0.0) {
+          float keep = mod(float(gl_VertexID), uStripePeriod) < 0.5 ? 1.0 : 0.0;
+          vColor.rgb *= mix(1.0, keep, uStripeStrength);
+        }
+        `,
+      );
   };
 
   material.customProgramCacheKey = () => 'lorenz-attractor-line';

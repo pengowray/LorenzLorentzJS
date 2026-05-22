@@ -66,7 +66,7 @@ test('keyboard toggles flip app flags', async ({ page }) => {
 
   for (const [key, flag] of [
     ['v', 'velColor'], ['n', 'speedup'], ['f', 'fadeOn'], ['.', 'lorentz'],
-    ['x', 'squiggle'], ['m', 'doodle'], ['q', 'followOne'],
+    ['x', 'squiggle'], ['m', 'doodle'], [',', 'stripes'], ['q', 'followOne'],
   ]) {
     const before = await page.evaluate(f => window._app.flags[f], flag);
     await page.keyboard.press(key);
@@ -161,6 +161,49 @@ test('squiggle and doodle change the rendered output', async ({ page }) => {
   expect(errors, errors.join('\n')).toEqual([]);
   expect(doodled).not.toBe(base);
   expect(squiggled).not.toBe(base);
+});
+
+test('stripes toggle reduces total brightness', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForTimeout(1500);
+
+  // Pause first so the trail doesn't keep growing between samples — the
+  // stripe dim is small and pure-frame-growth would mask it otherwise.
+  await page.locator('canvas').click();
+  await page.keyboard.press(' ');
+  await page.waitForTimeout(80);
+
+  const sum = () => page.evaluate(() => {
+    const r = window._app.renderer;
+    const gl = r.getContext();
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+    r.render(window._app.scene, window._app.camera);
+    const buf = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    let s = 0; for (let i = 0; i < buf.length; i += 4) s += buf[i] + buf[i+1] + buf[i+2];
+    return s;
+  });
+
+  const off = await sum();
+  await page.keyboard.press(',');
+  await page.waitForTimeout(80);
+  const on = await sum();
+
+  expect(on).toBeLessThan(off);
+});
+
+test('PNG export produces a downloadable image', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForTimeout(1000);
+  await page.locator('canvas').click();
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.keyboard.press('g'),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/^lorenz-\d+\.png$/);
 });
 
 test('speedup adjusts timescale away from 1', async ({ page }) => {

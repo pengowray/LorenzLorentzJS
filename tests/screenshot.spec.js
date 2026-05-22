@@ -27,4 +27,8 @@ test('capture screenshots', async ({ page }) => {
 
   await press('x'); await page.waitForTimeout(300);
   await page.screenshot({ path: 'test-results/shot-squiggle.png' });
+  await press('x');
+
+  await press(','); await page.waitForTimeout(300);
+  await page.screenshot({ path: 'test-results/shot-stripes.png' });
 });

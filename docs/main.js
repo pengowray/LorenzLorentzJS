@@ -8,10 +8,11 @@ import {
   squiggleStrengthUniform,
   squiggleCountUniform,
   doodleUniform,
+  stripeStrengthUniform,
   timeUniform,
 } from './material.js';
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setClearColor(0x000000, 1);
@@ -53,7 +54,7 @@ function addAttractor(opts) {
   return a;
 }
 
-addAttractor({ dt: DT, steps: 37, maxPoints: 10000, color: { r: 1, g: 1, b: 1 } });
+addAttractor({ dt: DT, steps: 37, maxPoints: 10000, color: { r: 1, g: 1, b: 1 }, stripePeriod: 2 });
 for (let i = 0; i < 120; i++) {
   const shade = (30 + Math.random() * 150) / 255;
   addAttractor({
@@ -61,9 +62,10 @@ for (let i = 0; i < 120; i++) {
     steps: 35 + Math.floor(Math.random() * 5),
     maxPoints: 50 + Math.floor(Math.random() * 1200),
     color: { r: shade, g: shade, b: shade + Math.random() * 10 / 255 },
+    stripePeriod: (i % 15) + 2, // matches the original's (attCount % 15) + 2
   });
 }
-addAttractor({ dt: DT, steps: 37, maxPoints: 10000, color: { r: 1, g: 1, b: 1 } });
+addAttractor({ dt: DT, steps: 37, maxPoints: 10000, color: { r: 1, g: 1, b: 1 }, stripePeriod: 2 });
 
 // State
 const flags = {
@@ -74,8 +76,24 @@ const flags = {
   lorentz: false,
   squiggle: false,
   doodle: false,
+  stripes: false,
   followOne: false,
 };
+
+function downloadPng() {
+  // preserveDrawingBuffer is on, so the backbuffer is still intact.
+  renderer.domElement.toBlob((blob) => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lorenz-${Date.now()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 'image/png');
+}
 
 function setAll(method, value) { for (const a of attractors) a[method](value); }
 
@@ -92,7 +110,9 @@ window.addEventListener('keydown', (e) => {
     if (flags.squiggle) squiggleCountUniform.value = 1 + Math.floor(Math.random() * 1000);
   }
   else if (e.key === 'm') { flags.doodle = !flags.doodle; doodleUniform.value = flags.doodle ? 1.0 : 0.0; }
+  else if (e.key === ',') { flags.stripes = !flags.stripes; stripeStrengthUniform.value = flags.stripes ? 1.0 : 0.0; }
   else if (e.key === 'q') { flags.followOne = !flags.followOne; }
+  else if (e.key === 'g') { downloadPng(); }
   else if (e.key === 'b') { boundsBox.visible = !boundsBox.visible; }
   else if (e.key >= '1' && e.key <= '9' && RAW_STATES[e.key]) applyState(camera, controls, RAW_STATES[e.key]);
   else if (e.key === '0') defaultState(camera, controls);

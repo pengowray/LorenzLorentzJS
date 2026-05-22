@@ -24,6 +24,7 @@ export class Attractor {
     dt = 0.0003,
     color = { r: 1, g: 1, b: 1 },
     seedJitter = 0.01,
+    stripePeriod = 4,
   } = {}) {
     this.maxPoints = maxPoints;
     this.steps = steps;
@@ -56,7 +57,7 @@ export class Attractor {
       new THREE.BufferAttribute(this.colors, 3).setUsage(THREE.DynamicDrawUsage));
     geometry.setDrawRange(maxPoints, 0);
 
-    const material = makeAttractorMaterial(maxPoints);
+    const material = makeAttractorMaterial(maxPoints, stripePeriod);
 
     this.geometry = geometry;
     this.material = material;

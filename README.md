@@ -31,18 +31,20 @@ To host on GitHub Pages: repo Settings → Pages → Source: *Deploy from a bran
 | `.` | Toggle Lorentz warp (relativistic transform, vertex shader) |
 | `x` | Toggle squiggle (animated jitter on the head, vertex shader) |
 | `m` | Toggle doodle (monotonic z-offset along the trail, vertex shader) |
+| `,` | Toggle stripes (per-attractor dashed pattern, vertex shader) |
 | `q` | Toggle follow-one (camera target chases attractor 0) |
+| `g` | Save current frame as PNG |
 | `b` | Toggle bounds box |
 | `1`–`9` | Camera presets (ported from PeasyCam states) |
 | `0` | Default camera |
 
 ## Status
 
-Working: core attractor evolution, multi-attractor rendering, additive blending, tail fade, velocity coloring, per-attractor speedup, Lorentz warp, squiggle head, doodle z-offset, follow-one-attractor, OrbitControls, bounds box, camera presets.
+All meaningful features from the original sketch are now ported. The three position-warping effects (Lorentz, squiggle, doodle) and the per-attractor stripe modulation all stack into the same vertex shader via `LineBasicMaterial.onBeforeCompile` + shared uniforms — see [docs/material.js](docs/material.js).
 
-The three position-warping effects (Lorentz, squiggle, doodle) are all stacked into the same vertex shader via `LineBasicMaterial.onBeforeCompile` + shared uniforms. See [docs/material.js](docs/material.js).
+PNG export (`g`) replaces the original's SVG/PDF export (which was already broken in 3D for the Processing version).
 
-Not yet ported: stripes (`,`, would need a varying + fragment-shader discard) and SVG export.
+Intentionally not ported: the development-only `findBoundsOn` mode (which used to log PVector min/max ranges to console), the always-`false` `wobble` block, and the alternate `EvolveSpeedup` heuristics that were commented out in the original.
 
 ## Tests
 
