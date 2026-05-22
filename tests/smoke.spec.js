@@ -64,7 +64,10 @@ test('keyboard toggles flip app flags', async ({ page }) => {
   const canvas = page.locator('canvas');
   await canvas.click(); // ensure window has focus
 
-  for (const [key, flag] of [['v', 'velColor'], ['n', 'speedup'], ['f', 'fadeOn'], ['.', 'lorentz']]) {
+  for (const [key, flag] of [
+    ['v', 'velColor'], ['n', 'speedup'], ['f', 'fadeOn'], ['.', 'lorentz'],
+    ['x', 'squiggle'], ['m', 'doodle'], ['q', 'followOne'],
+  ]) {
     const before = await page.evaluate(f => window._app.flags[f], flag);
     await page.keyboard.press(key);
     const after = await page.evaluate(f => window._app.flags[f], flag);
@@ -104,6 +107,60 @@ test('lorentz warp shader compiles and changes the rendered output', async ({ pa
 
   expect(errors, errors.join('\n')).toEqual([]);
   expect(after).not.toBe(before);
+});
+
+test('follow-one mode targets attractor[0]', async ({ page }) => {
+  await page.goto('/');
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForTimeout(500);
+  await page.locator('canvas').click();
+  await page.keyboard.press('q');
+  await page.waitForTimeout(200);
+
+  const { tx, ty, tz, ax, ay, az } = await page.evaluate(() => {
+    const t = window._app.controls.target;
+    const a = window._app.attractors[0];
+    return { tx: t.x, ty: t.y, tz: t.z, ax: a.x, ay: a.y, az: a.z };
+  });
+  // Target should be at (or chasing) the attractor's current point.
+  expect(Math.abs(tx - ax) + Math.abs(ty - ay) + Math.abs(tz - az)).toBeLessThan(1.0);
+});
+
+test('squiggle and doodle change the rendered output', async ({ page }) => {
+  const errors = [];
+  page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
+  page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
+
+  await page.goto('/');
+  await page.waitForFunction(() => window._app?.renderer != null, null, { timeout: 5000 });
+  await page.waitForTimeout(1500);
+
+  const pixelSum = () => page.evaluate(() => {
+    const r = window._app.renderer;
+    const gl = r.getContext();
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+    r.render(window._app.scene, window._app.camera);
+    const buf = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    let s = 0; for (let i = 0; i < buf.length; i += 4) s += buf[i] + buf[i+1] + buf[i+2];
+    return s;
+  });
+
+  const base = await pixelSum();
+  await page.locator('canvas').click();
+
+  await page.keyboard.press('m'); // doodle
+  await page.waitForTimeout(100);
+  const doodled = await pixelSum();
+  await page.keyboard.press('m'); // off
+
+  await page.keyboard.press('x'); // squiggle
+  await page.waitForTimeout(100);
+  const squiggled = await pixelSum();
+
+  expect(errors, errors.join('\n')).toEqual([]);
+  expect(doodled).not.toBe(base);
+  expect(squiggled).not.toBe(base);
 });
 
 test('speedup adjusts timescale away from 1', async ({ page }) => {

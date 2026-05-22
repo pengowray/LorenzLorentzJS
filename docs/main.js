@@ -3,7 +3,13 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Attractor } from './Attractor.js';
 import { MIN_LORENZ, MAX_LORENZ } from './lorenz.js';
 import { RAW_STATES, applyState, defaultState } from './cameraStates.js';
-import { lorentzUniform } from './material.js';
+import {
+  lorentzUniform,
+  squiggleStrengthUniform,
+  squiggleCountUniform,
+  doodleUniform,
+  timeUniform,
+} from './material.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -66,6 +72,9 @@ const flags = {
   velColor: false,
   speedup: false,
   lorentz: false,
+  squiggle: false,
+  doodle: false,
+  followOne: false,
 };
 
 function setAll(method, value) { for (const a of attractors) a[method](value); }
@@ -77,6 +86,13 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'v') { flags.velColor = !flags.velColor; setAll('setVelColor', flags.velColor); }
   else if (e.key === 'n') { flags.speedup = !flags.speedup; setAll('setSpeedup', flags.speedup); }
   else if (e.key === '.') { flags.lorentz = !flags.lorentz; lorentzUniform.value = flags.lorentz ? 1.0 : 0.0; }
+  else if (e.key === 'x') {
+    flags.squiggle = !flags.squiggle;
+    squiggleStrengthUniform.value = flags.squiggle ? 1.0 : 0.0;
+    if (flags.squiggle) squiggleCountUniform.value = 1 + Math.floor(Math.random() * 1000);
+  }
+  else if (e.key === 'm') { flags.doodle = !flags.doodle; doodleUniform.value = flags.doodle ? 1.0 : 0.0; }
+  else if (e.key === 'q') { flags.followOne = !flags.followOne; }
   else if (e.key === 'b') { boundsBox.visible = !boundsBox.visible; }
   else if (e.key >= '1' && e.key <= '9' && RAW_STATES[e.key]) applyState(camera, controls, RAW_STATES[e.key]);
   else if (e.key === '0') defaultState(camera, controls);
@@ -93,6 +109,11 @@ function animate() {
   if (!flags.paused) {
     for (const a of attractors) a.evolve();
   }
+  if (flags.followOne) {
+    const a = attractors[0];
+    controls.target.set(a.x, a.y, a.z);
+  }
+  timeUniform.value = performance.now() / 1000;
   controls.update();
   renderer.render(scene, camera);
 }
