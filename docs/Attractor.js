@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SIGMA, RHO, BETA } from './lorenz.js';
+import { makeAttractorMaterial } from './material.js';
 
 const TAIL = 100;          // length of the fade-out segment at the oldest end
 const SEED_VEL_MAX = 60;   // initial guess for maxDVel; grows from observation
@@ -55,13 +56,7 @@ export class Attractor {
       new THREE.BufferAttribute(this.colors, 3).setUsage(THREE.DynamicDrawUsage));
     geometry.setDrawRange(maxPoints, 0);
 
-    const material = new THREE.LineBasicMaterial({
-      vertexColors: true,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthTest: false,
-      depthWrite: false,
-    });
+    const material = makeAttractorMaterial(maxPoints);
 
     this.geometry = geometry;
     this.material = material;
@@ -103,9 +98,11 @@ export class Attractor {
   }
 
   _fadeAtSlot(i) {
+    // Slot 0 is the oldest point (tail end of the trail). Fade ramps from 0
+    // there to 1 over the first TAIL slots; the rest of the trail is full
+    // brightness. Newest end (slot N-1) is the head, always bright.
     if (!this.fadeOn) return 1;
-    const fromEnd = this.maxPoints - 1 - i;
-    return fromEnd < TAIL ? fromEnd / TAIL : 1;
+    return i < TAIL ? i / TAIL : 1;
   }
 
   setFade(on)     { this.fadeOn = on;   if (!this.velColor) this._rebuildStaticColors(); }

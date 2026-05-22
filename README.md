@@ -28,15 +28,16 @@ To host on GitHub Pages: repo Settings → Pages → Source: *Deploy from a bran
 | `f` | Toggle tail fade |
 | `v` | Toggle velocity-based coloring |
 | `n` | Toggle per-attractor speedup (timescale ∝ 1/velocity) |
+| `.` | Toggle Lorentz warp (relativistic transform in vertex shader) |
 | `b` | Toggle bounds box |
 | `1`–`9` | Camera presets (ported from PeasyCam states) |
 | `0` | Default camera |
 
 ## Status
 
-Working: core attractor evolution, multi-attractor rendering, additive blending, tail fade, velocity coloring, per-attractor speedup, OrbitControls, bounds box, camera presets.
+Working: core attractor evolution, multi-attractor rendering, additive blending, tail fade, velocity coloring, per-attractor speedup, Lorentz warp (vertex shader via `material.onBeforeCompile`), OrbitControls, bounds box, camera presets.
 
-Not yet ported from the original: squiggle head (`x`), Lorentz warp toggle (`.`), stripes (`,`), doodle z-offset (`m`), follow-one-attractor (`q`), SVG export. The Lorentz warp and squiggle/doodle effects mutate vertex positions in a way that's most naturally expressed in a vertex shader; they'll come in a later pass.
+Not yet ported from the original: squiggle head (`x`), stripes (`,`), doodle z-offset (`m`), follow-one-attractor (`q`), SVG export. Squiggle and doodle would slot into the same `onBeforeCompile` shader as the Lorentz warp.
 
 ## Tests
 

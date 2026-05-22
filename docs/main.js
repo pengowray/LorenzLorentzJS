@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Attractor } from './Attractor.js';
 import { MIN_LORENZ, MAX_LORENZ } from './lorenz.js';
 import { RAW_STATES, applyState, defaultState } from './cameraStates.js';
+import { lorentzUniform } from './material.js';
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -64,6 +65,7 @@ const flags = {
   fadeOn: true,
   velColor: false,
   speedup: false,
+  lorentz: false,
 };
 
 function setAll(method, value) { for (const a of attractors) a[method](value); }
@@ -74,6 +76,7 @@ window.addEventListener('keydown', (e) => {
   else if (e.key === 'f') { flags.fadeOn = !flags.fadeOn; setAll('setFade', flags.fadeOn); }
   else if (e.key === 'v') { flags.velColor = !flags.velColor; setAll('setVelColor', flags.velColor); }
   else if (e.key === 'n') { flags.speedup = !flags.speedup; setAll('setSpeedup', flags.speedup); }
+  else if (e.key === '.') { flags.lorentz = !flags.lorentz; lorentzUniform.value = flags.lorentz ? 1.0 : 0.0; }
   else if (e.key === 'b') { boundsBox.visible = !boundsBox.visible; }
   else if (e.key >= '1' && e.key <= '9' && RAW_STATES[e.key]) applyState(camera, controls, RAW_STATES[e.key]);
   else if (e.key === '0') defaultState(camera, controls);
