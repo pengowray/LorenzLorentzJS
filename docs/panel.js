@@ -1,7 +1,7 @@
 // Minimalist control panel. Thin grey borders, monospace, sectioned.
-// Toggle rows dispatch through the shared ACTIONS table from main.js so the
-// keyboard and panel agree on state. A knob row sits directly under the
-// toggle it belongs to, bound to a shared uniform.
+// Each section has a clickable title that collapses/expands it. There is
+// a master header at the top that collapses the whole panel; on touch
+// devices it starts collapsed so the controls don't cover the canvas.
 
 const SECTIONS = [
   { title: 'view', items: [
@@ -31,8 +31,13 @@ const SECTIONS = [
     { key: ' ', label: 'pause',       flag: 'paused', keyDisplay: '⎵' },
     { key: 'r', label: 'reset trails' },
     { key: 'g', label: 'save png' },
+  ] },
+  // Loop / recording is collapsed by default. Most sessions won't touch it
+  // and unfolding it explicitly keeps the recording UI from cluttering the
+  // common-use panel.
+  { title: 'loop', collapsed: true, items: [
     { key: 'S', label: 'staggered seams', flag: 'staggered' },
-    { record: true, label: 'record loop', flag: 'recording' },
+    { record: true, label: 'record video', flag: 'recording' },
   ] },
 ];
 
@@ -47,6 +52,22 @@ const STYLE = `
   user-select: none;
   z-index: 10;
 }
+#panel .head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 10px;
+  border-bottom: 1px solid #1f1f1f;
+  cursor: pointer;
+  color: #aaa;
+  font-size: 9.5px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+#panel .head:hover { color: #ddd; }
+#panel .head .chev { color: #666; }
+#panel.collapsed .body { display: none; }
+#panel.collapsed .head { border-bottom: none; }
+#panel .body { max-height: calc(100vh - 60px); overflow-y: auto; }
+
 #panel .section { padding: 4px 10px 5px; }
 #panel .section + .section { border-top: 1px solid #1f1f1f; }
 #panel .title {
@@ -55,7 +76,15 @@ const STYLE = `
   letter-spacing: 1.5px;
   text-transform: uppercase;
   margin-bottom: 3px;
+  cursor: pointer;
+  display: flex; justify-content: space-between; align-items: center;
 }
+#panel .title:hover { color: #ddd; }
+#panel .title .chev { color: #555; font-size: 8px; }
+#panel .section.collapsed .body-rows,
+#panel .section.collapsed .camgrid { display: none; }
+#panel .section.collapsed .title { margin-bottom: 0; }
+
 #panel .row {
   display: grid;
   grid-template-columns: 14px 1fr 14px;
@@ -72,8 +101,6 @@ const STYLE = `
 #panel .row.action .s { visibility: hidden; }
 #panel .row.record .s { color: #c66; }
 
-/* Knob row, nested under a toggle. The empty first column keeps it aligned
-   with the toggle's label (skipping the key shortcut column). */
 #panel .knob {
   display: grid;
   grid-template-columns: 14px 32px 1fr 30px;
@@ -118,10 +145,30 @@ const STYLE = `
   font-size: 10px;
 }
 #panel .cambtn:hover { color: #ddd; border-color: #555; }
+
+/* Mobile / touch devices: bigger touch targets, larger font. */
+@media (max-width: 768px), (pointer: coarse) {
+  #panel {
+    font-size: 13px;
+    line-height: 1.7;
+    min-width: 220px;
+    top: 8px; right: 8px;
+  }
+  #panel .head { font-size: 11px; padding: 8px 12px; }
+  #panel .title { font-size: 10px; }
+  #panel .row { padding: 6px 0; grid-template-columns: 20px 1fr 20px; }
+  #panel .row .k { font-size: 12px; }
+  #panel .row .s { font-size: 13px; }
+  #panel .cambtn { padding: 8px 0; font-size: 13px; }
+  #panel .knob { padding: 4px 0; grid-template-columns: 20px 36px 1fr 36px; }
+  #panel .knob .knob-label { font-size: 11px; }
+  #panel .knob .value { font-size: 11px; }
+  #panel .knob input[type="range"] { height: 4px; }
+  #panel .knob input[type="range"]::-webkit-slider-thumb { width: 14px; height: 14px; }
+  #panel .knob input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; }
+}
 `;
 
-// `knobs` is a map keyed by flag name. Each entry: { uniform, min, max, step,
-// label }. Rendered directly below the matching toggle row.
 export function setupPanel({ actions, isOn, canvas, knobs = {} }) {
   const style = document.createElement('style');
   style.textContent = STYLE;
@@ -130,12 +177,32 @@ export function setupPanel({ actions, isOn, canvas, knobs = {} }) {
   const panel = document.createElement('div');
   panel.id = 'panel';
 
+  // Master header: clicking collapses/expands the whole body.
+  const head = document.createElement('div');
+  head.className = 'head';
+  const headLabel = document.createElement('span');
+  headLabel.textContent = 'controls';
+  const headChev = document.createElement('span');
+  headChev.className = 'chev';
+  headChev.textContent = '▾';
+  head.append(headLabel, headChev);
+  panel.append(head);
+
+  const body = document.createElement('div');
+  body.className = 'body';
+  panel.append(body);
+
+  head.onclick = () => {
+    const collapsed = panel.classList.toggle('collapsed');
+    headChev.textContent = collapsed ? '▸' : '▾';
+  };
+
   const rowsByFlag = new Map();
 
   function makeKnobRow(knob) {
     const row = document.createElement('div');
     row.className = 'knob';
-    row.appendChild(document.createElement('span')); // empty key column
+    row.appendChild(document.createElement('span'));
 
     const label = document.createElement('span');
     label.className = 'knob-label';
@@ -165,10 +232,21 @@ export function setupPanel({ actions, isOn, canvas, knobs = {} }) {
   for (const section of SECTIONS) {
     const sec = document.createElement('div');
     sec.className = 'section';
+    if (section.collapsed) sec.classList.add('collapsed');
+
     const title = document.createElement('div');
     title.className = 'title';
-    title.textContent = section.title;
-    sec.appendChild(title);
+    const titleText = document.createElement('span');
+    titleText.textContent = section.title;
+    const titleChev = document.createElement('span');
+    titleChev.className = 'chev';
+    titleChev.textContent = section.collapsed ? '▸' : '▾';
+    title.append(titleText, titleChev);
+    title.onclick = () => {
+      const collapsed = sec.classList.toggle('collapsed');
+      titleChev.textContent = collapsed ? '▸' : '▾';
+    };
+    sec.append(title);
 
     if (section.grid) {
       const grid = document.createElement('div');
@@ -182,6 +260,8 @@ export function setupPanel({ actions, isOn, canvas, knobs = {} }) {
       }
       sec.appendChild(grid);
     } else {
+      const rows = document.createElement('div');
+      rows.className = 'body-rows';
       for (const item of section.items) {
         const row = document.createElement('div');
         row.className = 'row'
@@ -207,20 +287,18 @@ export function setupPanel({ actions, isOn, canvas, knobs = {} }) {
           if (item.record) actions['R']?.();
           else actions[item.key]?.();
         };
-        sec.appendChild(row);
+        rows.appendChild(row);
         if (item.flag) rowsByFlag.set(item.flag, { row, s });
 
-        // If this flag has a knob, render it directly below the toggle.
         if (item.flag && knobs[item.flag]) {
-          sec.appendChild(makeKnobRow(knobs[item.flag]));
+          rows.appendChild(makeKnobRow(knobs[item.flag]));
         }
       }
+      sec.appendChild(rows);
     }
-    panel.appendChild(sec);
+    body.appendChild(sec);
   }
 
-  // Forward wheel events to the canvas so scroll-to-zoom still works while
-  // the cursor is over the panel.
   if (canvas) {
     panel.addEventListener('wheel', (e) => {
       const ev = new WheelEvent('wheel', {
@@ -236,6 +314,15 @@ export function setupPanel({ actions, isOn, canvas, knobs = {} }) {
   }
 
   document.body.appendChild(panel);
+
+  // Start collapsed on touch devices so the controls don't sit on top of
+  // the canvas until the user opts in.
+  const isTouch = window.matchMedia('(pointer: coarse)').matches
+    || window.innerWidth < 768;
+  if (isTouch) {
+    panel.classList.add('collapsed');
+    headChev.textContent = '▸';
+  }
 
   function refresh() {
     for (const [flag, { row, s }] of rowsByFlag) {
