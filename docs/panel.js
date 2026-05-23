@@ -3,43 +3,176 @@
 // a master header at the top that collapses the whole panel; on touch
 // devices it starts collapsed so the controls don't cover the canvas.
 
-const SECTIONS = [
-  { title: 'view', items: [
-    { key: 'b', label: 'bounds box', flag: 'boundsBox' },
-    { key: 'q', label: 'follow one',  flag: 'followOne' },
-    { key: '0', label: 'reset camera' },
-  ] },
-  { title: 'camera', items: [
-    { key: '1' }, { key: '2' }, { key: '3' },
-    { key: '4' }, { key: '5' }, { key: '6' },
-    { key: '7' }, { key: '8' }, { key: '9' },
-  ], grid: true },
-  { title: 'effects', items: [
-    { key: 'f', label: 'fade tail',   flag: 'fadeOn' },
-    { key: 'v', label: 'velocity col',flag: 'velColor' },
-    { key: 'n', label: 'speedup',     flag: 'speedup' },
-    { key: 'x', label: 'squiggle',    flag: 'squiggle' },
-    { key: 'm', label: 'doodle',      flag: 'doodle' },
-    { key: ',', label: 'stripes',     flag: 'stripes' },
-  ] },
-  { title: 'lorentz', items: [
-    { key: '.', label: 'bedhair',     flag: 'bedhair' },
-    { key: ';', label: 'beam',        flag: 'beam' },
-    { key: "'", label: 'delay',       flag: 'delay' },
-  ] },
-  { title: 'sim', items: [
-    { key: ' ', label: 'pause',       flag: 'paused', keyDisplay: '⎵' },
-    { key: 'r', label: 'reset trails' },
-    { key: 'g', label: 'save png' },
-  ] },
-  // Loop / recording is collapsed by default. Most sessions won't touch it
-  // and unfolding it explicitly keeps the recording UI from cluttering the
-  // common-use panel.
-  { title: 'loop', collapsed: true, items: [
-    { key: 'S', label: 'staggered fades', flag: 'staggered' },
-    { record: true, label: 'record video', flag: 'recording' },
-  ] },
-];
+import { loopConfig, SIZES, loopStats, durationFrames } from './loop.js';
+import { lorenzParams, LORENZ_DEFAULTS } from './lorenz.js';
+
+// Sections are built lazily so the loop section can pull callbacks
+// (size change, config change) from main.js. Everything else is static.
+function buildSections({
+  onSizeChange = () => {}, onConfigChange = () => {}, attractors = [],
+  scene = null,
+} = {}) {
+  return [
+    { title: 'view', items: [
+      { key: 'b', label: 'bounds box', flag: 'boundsBox' },
+      { key: 'q', label: 'follow one',  flag: 'followOne' },
+      { key: '0', label: 'reset camera' },
+    ] },
+    { title: 'camera', items: [
+      { key: '1' }, { key: '2' }, { key: '3' },
+      { key: '4' }, { key: '5' }, { key: '6' },
+      { key: '7' }, { key: '8' }, { key: '9' },
+    ], grid: true },
+    { title: 'effects', items: [
+      { key: 'f', label: 'fade tail',   flag: 'fadeOn' },
+      { key: 'v', label: 'velocity col',flag: 'velColor' },
+      { key: 'n', label: 'speedup',     flag: 'speedup' },
+      { key: 'x', label: 'squiggle',    flag: 'squiggle' },
+      { key: 'm', label: 'doodle',      flag: 'doodle' },
+      { key: ',', label: 'stripes',     flag: 'stripes' },
+    ] },
+    { title: 'lorentz', items: [
+      { key: '.', label: 'bedhair',     flag: 'bedhair' },
+      { key: ';', label: 'beam',        flag: 'beam' },
+      { key: "'", label: 'delay',       flag: 'delay' },
+    ] },
+    // Scene composition: how many attractors, their colour palette, and
+    // the range of trail lengths for the wash of grey ones. Heavy to
+    // change (regenerates + pre-warms every attractor), so the count /
+    // trail sliders only re-run on release (onCommit).
+    ...(scene ? [{ title: 'scene', collapsed: true, items: [
+      {
+        type: 'slider', label: 'count',
+        get: () => scene.config.numAttractors,
+        set: v => { scene.config.numAttractors = v; },
+        min: 5, max: 300, step: 1,
+        format: v => `${v}`,
+        default: scene.defaults.numAttractors,
+        onCommit: scene.onRebuild,
+      },
+      {
+        type: 'slider', label: 't min',
+        get: () => scene.config.trailMin,
+        set: v => { scene.config.trailMin = v; },
+        min: 10, max: 2000, step: 10,
+        format: v => `${v}`,
+        default: scene.defaults.trailMin,
+        onCommit: scene.onRebuild,
+      },
+      {
+        type: 'slider', label: 't max',
+        get: () => scene.config.trailMax,
+        set: v => { scene.config.trailMax = v; },
+        min: 50, max: 5000, step: 50,
+        format: v => `${v}`,
+        default: scene.defaults.trailMax,
+        onCommit: scene.onRebuild,
+      },
+      {
+        type: 'cycler', label: 'colors',
+        options: scene.colorSchemes,
+        get: () => scene.config.colorScheme,
+        set: i => { scene.config.colorScheme = i; },
+        format: s => s.label,
+        onChange: scene.onRebuild,
+      },
+    ] }] : []),
+    // The classic Lorenz equation coefficients. Defaults (10, 28, 8/3)
+    // give the butterfly; nudging them creates other shapes / fixed points.
+    { title: 'lorenz', collapsed: true, items: [
+      {
+        type: 'slider', label: 'σ',
+        get: () => lorenzParams.sigma, set: v => { lorenzParams.sigma = v; },
+        min: 0, max: 30, step: 0.1,
+        format: v => v.toFixed(1),
+        default: LORENZ_DEFAULTS.sigma,
+        onChange: onConfigChange,
+      },
+      {
+        type: 'slider', label: 'ρ',
+        get: () => lorenzParams.rho, set: v => { lorenzParams.rho = v; },
+        min: 0, max: 50, step: 0.1,
+        format: v => v.toFixed(1),
+        default: LORENZ_DEFAULTS.rho,
+        onChange: onConfigChange,
+      },
+      {
+        type: 'slider', label: 'β',
+        get: () => lorenzParams.beta, set: v => { lorenzParams.beta = v; },
+        min: 0, max: 6, step: 0.01,
+        format: v => v.toFixed(2),
+        default: LORENZ_DEFAULTS.beta,
+        onChange: onConfigChange,
+      },
+    ] },
+    { title: 'sim', items: [
+      { key: ' ', label: 'pause',       flag: 'paused', keyDisplay: '⎵' },
+      { key: 'r', label: 'reset trails' },
+      { key: 'g', label: 'save png' },
+    ] },
+    // Loop / recording is collapsed by default. Most sessions won't touch it
+    // and unfolding it explicitly keeps the recording UI from cluttering the
+    // common-use panel.
+    { title: 'loop', collapsed: true, items: [
+      {
+        type: 'cycler', label: 'size',
+        options: SIZES,
+        get: () => loopConfig.sizeIndex,
+        set: (i) => { loopConfig.sizeIndex = i; },
+        format: (s) => s.label,
+        onChange: onSizeChange,
+      },
+      {
+        type: 'slider', label: 'dur',
+        get: () => loopConfig.duration,
+        set: (v) => { loopConfig.duration = v; },
+        min: 1, max: 20, step: 1,
+        format: (v) => `${v}s`,
+        onChange: onConfigChange,
+      },
+      {
+        type: 'slider', label: 'fade',
+        get: () => loopConfig.fadeFraction,
+        set: (v) => { loopConfig.fadeFraction = v; },
+        min: 0.01, max: 0.5, step: 0.01,
+        // Shown as % of each attractor's trail length.
+        format: (v) => `${Math.round(v * 100)}%`,
+        onChange: onConfigChange,
+      },
+      {
+        type: 'slider', label: 'spin',
+        get: () => loopConfig.spin, set: v => { loopConfig.spin = v; },
+        min: 0, max: 5, step: 1,
+        format: v => `${v}×`,
+        default: 0,
+      },
+      {
+        type: 'slider', label: 'wobble',
+        get: () => loopConfig.wobble, set: v => { loopConfig.wobble = v; },
+        min: 0, max: 45, step: 1,
+        format: v => `${v}°`,
+        default: 0,
+      },
+      { key: 'L', label: 'preview loop',    flag: 'loopPreview' },
+      { key: 'S', label: 'staggered fades', flag: 'staggered' },
+      { record: true, label: 'record video', flag: 'recording' },
+      {
+        type: 'info', label: 'phase fade',
+        get: () => {
+          const s = loopStats(attractors, durationFrames());
+          return `${s.phase} / ${s.total}`;
+        },
+      },
+      {
+        type: 'info', label: 'whole fade',
+        get: () => {
+          const s = loopStats(attractors, durationFrames());
+          return `${s.natural} / ${s.total}`;
+        },
+      },
+    ] },
+  ];
+}
 
 const STYLE = `
 #panel {
@@ -103,11 +236,20 @@ const STYLE = `
 
 #panel .knob {
   display: grid;
-  grid-template-columns: 14px 32px 1fr 30px;
+  grid-template-columns: 14px 32px 1fr 30px 14px;
   align-items: center;
   gap: 6px;
   padding: 0 0 1px;
 }
+#panel .knob .reset {
+  cursor: pointer;
+  color: #555;
+  font-size: 11px;
+  text-align: center;
+  visibility: hidden;
+}
+#panel .knob .reset:hover { color: #ddd; }
+#panel .knob.dirty .reset { visibility: visible; }
 #panel .knob .knob-label { color: #666; font-size: 9.5px; }
 #panel .knob input[type="range"] {
   -webkit-appearance: none;
@@ -130,6 +272,34 @@ const STYLE = `
 #panel .knob input[type="range"]:hover::-webkit-slider-thumb { background: #ddd; }
 #panel .knob input[type="range"]:hover::-moz-range-thumb { background: #ddd; }
 #panel .knob .value { color: #777; text-align: right; font-size: 9.5px; }
+
+#panel .cycler {
+  display: grid;
+  grid-template-columns: 14px 32px 12px 1fr 12px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0 1px;
+}
+#panel .cycler .cycler-label { color: #666; font-size: 9.5px; }
+#panel .cycler .cycler-value {
+  color: #999; font-size: 9.5px; text-align: center; cursor: pointer;
+}
+#panel .cycler .cycler-value:hover { color: #ddd; }
+#panel .cycler .cycler-arrow {
+  color: #555; cursor: pointer; text-align: center; font-size: 12px;
+}
+#panel .cycler .cycler-arrow:hover { color: #ddd; }
+
+#panel .info {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0 1px;
+  color: #777;
+}
+#panel .info .info-label { color: #666; font-size: 9.5px; }
+#panel .info .info-value { color: #aaa; font-size: 9.5px; text-align: right; }
 
 #panel .camgrid {
   display: grid;
@@ -187,10 +357,18 @@ const STYLE = `
   #panel .knob input[type="range"] { height: 6px; }
   #panel .knob input[type="range"]::-webkit-slider-thumb { width: 20px; height: 20px; }
   #panel .knob input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; }
+  #panel .cycler {
+    padding: 8px 0;
+    grid-template-columns: 22px 42px 22px 1fr 22px;
+    min-height: 32px;
+  }
+  #panel .cycler .cycler-label { font-size: 13px; }
+  #panel .cycler .cycler-value { font-size: 13px; }
+  #panel .cycler .cycler-arrow { font-size: 18px; }
 }
 `;
 
-export function setupPanel({ actions, isOn, canvas, knobs = {} }) {
+export function setupPanel({ actions, isOn, canvas, knobs = {}, loop = {}, scene = null }) {
   const style = document.createElement('style');
   style.textContent = STYLE;
   document.head.appendChild(style);
@@ -220,7 +398,11 @@ export function setupPanel({ actions, isOn, canvas, knobs = {} }) {
   };
 
   const rowsByFlag = new Map();
+  const refreshHooks = [];
 
+  // A range slider tied to either a uniform (knob.uniform) or to an
+  // arbitrary JS getter/setter (knob.get / knob.set). Used both for the
+  // shader-uniform knobs in `knobs` and for the loop config sliders.
   function makeKnobRow(knob) {
     const row = document.createElement('div');
     row.className = 'knob';
@@ -231,27 +413,110 @@ export function setupPanel({ actions, isOn, canvas, knobs = {} }) {
     label.textContent = knob.label ?? '';
     row.appendChild(label);
 
+    const get = knob.uniform ? () => knob.uniform.value : knob.get;
+    const set = knob.uniform ? (v) => { knob.uniform.value = v; } : knob.set;
+    const fmt = knob.format ?? ((v) => Number(v).toFixed(2));
+
     const input = document.createElement('input');
     input.type = 'range';
     input.min = knob.min;
     input.max = knob.max;
     input.step = knob.step;
-    input.value = knob.uniform.value;
+    input.value = get();
     row.appendChild(input);
 
     const valueLabel = document.createElement('span');
     valueLabel.className = 'value';
-    const fmt = () => knob.uniform.value.toFixed(2);
-    valueLabel.textContent = fmt();
+    valueLabel.textContent = fmt(get());
     input.oninput = () => {
-      knob.uniform.value = parseFloat(input.value);
-      valueLabel.textContent = fmt();
+      set(parseFloat(input.value));
+      valueLabel.textContent = fmt(get());
+      knob.onChange?.();
     };
+    // `change` fires on release (after the user lets go). Used for
+    // expensive operations like scene regeneration where we don't want
+    // to re-run every pixel of slider drag.
+    input.onchange = () => { knob.onCommit?.(); };
     row.appendChild(valueLabel);
+
+    // Optional reset-to-default 'x'. Only shown when the slider is off
+    // its default value, so the panel doesn't get visual noise from
+    // every knob having an always-on dismiss button.
+    const reset = document.createElement('span');
+    reset.className = 'reset';
+    reset.textContent = '×';
+    if (knob.default !== undefined) {
+      reset.onclick = () => {
+        set(knob.default);
+        input.value = knob.default;
+        valueLabel.textContent = fmt(knob.default);
+        knob.onChange?.();
+      };
+    }
+    row.appendChild(reset);
+
+    refreshHooks.push(() => {
+      const v = get();
+      if (parseFloat(input.value) !== v) input.value = v;
+      const txt = fmt(v);
+      if (valueLabel.textContent !== txt) valueLabel.textContent = txt;
+      if (knob.default !== undefined) {
+        const dirty = Math.abs(v - knob.default) > (knob.step ?? 0) / 2;
+        row.classList.toggle('dirty', dirty);
+      }
+    });
     return row;
   }
 
-  for (const section of SECTIONS) {
+  // ‹ value › cycler for picking from a small set of options (e.g. the
+  // recording size). Clicking the value itself also advances by one,
+  // wrapping at the ends — handy on touch where the arrows are small.
+  function makeCyclerRow(item) {
+    const row = document.createElement('div');
+    row.className = 'cycler';
+    row.appendChild(document.createElement('span'));
+
+    const label = document.createElement('span');
+    label.className = 'cycler-label';
+    label.textContent = item.label ?? '';
+    row.appendChild(label);
+
+    const prev = document.createElement('span');
+    prev.className = 'cycler-arrow';
+    prev.textContent = '‹';
+    row.appendChild(prev);
+
+    const valueLabel = document.createElement('span');
+    valueLabel.className = 'cycler-value';
+    row.appendChild(valueLabel);
+
+    const next = document.createElement('span');
+    next.className = 'cycler-arrow';
+    next.textContent = '›';
+    row.appendChild(next);
+
+    const update = () => {
+      const i = item.get();
+      const opt = item.options[i];
+      valueLabel.textContent = item.format ? item.format(opt) : String(opt);
+    };
+    const step = (dir) => {
+      const n = item.options.length;
+      item.set((item.get() + dir + n) % n);
+      update();
+      item.onChange?.();
+    };
+    prev.onclick = () => step(-1);
+    next.onclick = () => step(+1);
+    valueLabel.onclick = () => step(+1);
+
+    update();
+    refreshHooks.push(update);
+    return row;
+  }
+
+  const sections = buildSections({ ...loop, scene });
+  for (const section of sections) {
     const sec = document.createElement('div');
     sec.className = 'section';
     if (section.collapsed) sec.classList.add('collapsed');
@@ -285,6 +550,34 @@ export function setupPanel({ actions, isOn, canvas, knobs = {} }) {
       const rows = document.createElement('div');
       rows.className = 'body-rows';
       for (const item of section.items) {
+        if (item.type === 'slider') {
+          rows.appendChild(makeKnobRow(item));
+          continue;
+        }
+        if (item.type === 'cycler') {
+          rows.appendChild(makeCyclerRow(item));
+          continue;
+        }
+        if (item.type === 'info') {
+          const row = document.createElement('div');
+          row.className = 'info';
+          row.appendChild(document.createElement('span'));
+          const label = document.createElement('span');
+          label.className = 'info-label';
+          label.textContent = item.label ?? '';
+          row.appendChild(label);
+          const value = document.createElement('span');
+          value.className = 'info-value';
+          value.textContent = item.get();
+          refreshHooks.push(() => {
+            const txt = item.get();
+            if (value.textContent !== txt) value.textContent = txt;
+          });
+          row.appendChild(value);
+          rows.appendChild(row);
+          continue;
+        }
+
         const row = document.createElement('div');
         row.className = 'row'
           + (item.flag ? '' : ' action')
@@ -352,6 +645,7 @@ export function setupPanel({ actions, isOn, canvas, knobs = {} }) {
       row.classList.toggle('on', on);
       s.textContent = on ? '●' : '○';
     }
+    for (const fn of refreshHooks) fn();
   }
   refresh();
   setInterval(refresh, 100);

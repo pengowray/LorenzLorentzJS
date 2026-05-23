@@ -1,9 +1,18 @@
 // Lorenz attractor constants and shared bounds.
 // Ported from the Processing version's Globals.pde / Attractor.pde.
 
-export const SIGMA = 10;
-export const RHO = 28;
-export const BETA = 8 / 3;
+// The classic Lorenz parameters. Kept on a mutable object so the panel
+// sliders can tune them at runtime; Attractor.step / recordTrajectory
+// read .sigma / .rho / .beta directly each step so changes take effect
+// on the next simulation tick.
+export const LORENZ_DEFAULTS = Object.freeze({ sigma: 10, rho: 28, beta: 8 / 3 });
+export const lorenzParams = { ...LORENZ_DEFAULTS };
+
+// Backwards-compatible immutable exports (matches the original constants;
+// new code should read lorenzParams instead so runtime overrides apply).
+export const SIGMA = LORENZ_DEFAULTS.sigma;
+export const RHO = LORENZ_DEFAULTS.rho;
+export const BETA = LORENZ_DEFAULTS.beta;
 
 // Empirically-found bounds from the original sketch (used for normalize/denormalize
 // and for the optional bounds box).

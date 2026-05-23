@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Line2 } from 'three/addons/lines/Line2.js';
 import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
-import { SIGMA, RHO, BETA } from './lorenz.js';
+import { lorenzParams } from './lorenz.js';
 import { makeAttractorMaterial } from './material.js';
 
 const TAIL = 100;          // length of the fade-out segment at the oldest end
@@ -156,11 +156,12 @@ export class Attractor {
     const totalSubsteps = morph ? morph.framesTotal * n : 0;
     const elapsedAtStart = morph ? Math.round(morph.progress * totalSubsteps) : 0;
     const tx = morph?.target.x ?? 0, ty = morph?.target.y ?? 0, tz = morph?.target.z ?? 0;
+    const { sigma, rho, beta } = lorenzParams;
 
     for (let i = 0; i < n; i++) {
-      const dx_nat = SIGMA * (y - x);
-      const dy_nat = x * (RHO - z) - y;
-      const dz_nat = x * y - BETA * z;
+      const dx_nat = sigma * (y - x);
+      const dy_nat = x * (rho - z) - y;
+      const dz_nat = x * y - beta * z;
 
       let dx, dy, dz;
       if (morph) {
@@ -198,6 +199,118 @@ export class Attractor {
     this.drawCount = Math.min(this.drawCount + n, this.maxPoints);
 
     if (this.velColor) this._updateDynamicColors();
+  }
+
+  // Pre-record a V-frame trajectory starting from the current (x, y, z)
+  // without disturbing the live simulation.
+  //
+  // Two layouts depending on `preLoop`:
+  //   - preLoop = 0: V*steps positions. Used by phase-shifted playback,
+  //     where the trail wraps cleanly around the V-frame buffer and the
+  //     per-vertex kink fade hides the wrap.
+  //   - preLoop = maxPoints: V*steps + maxPoints positions. The first
+  //     maxPoints serve as "before the loop" history so the trail at
+  //     frame 0 is fully populated without wrapping. Used when the trail
+  //     is longer than V*steps (the kink would never exit the trail) —
+  //     playback is natural and the seam jump is hidden by a whole-
+  //     attractor fade at frame 0.
+  recordTrajectory(V, preLoop = 0) {
+    const stepsPerFrame = this.steps;
+    const T = V * stepsPerFrame;
+    const totalSubs = T + preLoop;
+    const positions = new Float32Array(totalSubs * 3);
+    const dtt = this.dt;
+    let x = this.x, y = this.y, z = this.z;
+    const { sigma, rho, beta } = lorenzParams;
+    for (let t = 0; t < totalSubs; t++) {
+      const dx = sigma * (y - x);
+      const dy = x * (rho - z) - y;
+      const dz = x * y - beta * z;
+      x += dx * dtt;
+      y += dy * dtt;
+      z += dz * dtt;
+      positions[t * 3]     = x;
+      positions[t * 3 + 1] = y;
+      positions[t * 3 + 2] = z;
+    }
+    this._recorded = { V, T, preLoop, stepsPerFrame, positions };
+  }
+
+  hasRecording() { return this._recorded != null; }
+  clearRecording() { this._recorded = null; this._setKinkInactive(); }
+
+  _setKinkInactive() {
+    this.material.userData.kinkCenterUniform.value = -1e6;
+    this.material.userData.kinkPeriodUniform.value = 1e8;
+  }
+
+  // Populate the trail buffer from the recorded trajectory ending at
+  // substep `h`. Behaviour splits on whether the recording was made with
+  // `preLoop` padding:
+  //
+  //   - preLoop == 0 (phase-shift mode): h is interpreted modulo T, the
+  //     trail wraps around the V*steps buffer, and the kink uniforms get
+  //     set so the wrap segment(s) fade in the shader.
+  //   - preLoop > 0 (natural-sim mode): h is the substep offset *into*
+  //     the loop (0..T-1); the trail extends back into the pre-loop
+  //     padding without ever wrapping the buffer, and kink uniforms stay
+  //     inactive (whole-attractor fade handles the seam instead).
+  lookupTrajectoryFrame(h) {
+    const r = this._recorded;
+    if (!r) return;
+    const { T, preLoop, positions } = r;
+    const maxPoints = this.maxPoints;
+    const trail = this.positions;
+
+    if (preLoop > 0) {
+      // Natural-sim path. Slot 0 (oldest) = positions[preLoop + h - (maxPoints-1)].
+      // Slot maxPoints-1 (newest) = positions[preLoop + h].
+      const tail = preLoop + h - (maxPoints - 1);
+      trail.set(positions.subarray(tail * 3, (tail + maxPoints) * 3), 0);
+      this.drawCount = maxPoints;
+      const headOff = (preLoop + h) * 3;
+      this.x = positions[headOff];
+      this.y = positions[headOff + 1];
+      this.z = positions[headOff + 2];
+      this._setKinkInactive();
+      return;
+    }
+
+    // Phase-shift path. The trail wraps around the V*steps buffer.
+    h = ((h % T) + T) % T;
+    // Fast path: trail doesn't wrap → one block copy.
+    const tailRaw = h - (maxPoints - 1);
+    if (tailRaw >= 0 && tailRaw + maxPoints <= T) {
+      trail.set(positions.subarray(tailRaw * 3, (tailRaw + maxPoints) * 3), 0);
+      this._setKinkInactive();
+    } else if (maxPoints <= T) {
+      // Single wrap → two block copies.
+      const tail = ((tailRaw % T) + T) % T;
+      const firstLen = T - tail;
+      trail.set(positions.subarray(tail * 3, T * 3), 0);
+      trail.set(positions.subarray(0, (maxPoints - firstLen) * 3), firstLen * 3);
+      this.material.userData.kinkCenterUniform.value = firstLen - 0.5;
+      this.material.userData.kinkPeriodUniform.value = T;
+    } else {
+      // Multi-wrap (maxPoints > T). Slow path; only used when the loop
+      // duration is too short to fit the trail.
+      for (let k = 0; k < maxPoints; k++) {
+        let src = h - (maxPoints - 1 - k);
+        src = ((src % T) + T) % T;
+        const off = src * 3;
+        const dst = k * 3;
+        trail[dst]     = positions[off];
+        trail[dst + 1] = positions[off + 1];
+        trail[dst + 2] = positions[off + 2];
+      }
+      this.material.userData.kinkCenterUniform.value = (maxPoints - 1 - h - 0.5);
+      this.material.userData.kinkPeriodUniform.value = T;
+    }
+    this.drawCount = maxPoints;
+    const headOff = h * 3;
+    this.x = positions[headOff];
+    this.y = positions[headOff + 1];
+    this.z = positions[headOff + 2];
   }
 
   // Snapshot/restore for the recorder's two-pass loop. Captures everything

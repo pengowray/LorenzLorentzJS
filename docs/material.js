@@ -67,6 +67,9 @@ uniform float uMaxSegLen;
 uniform float uCNorm;
 uniform float uTime;
 uniform float uOpacity;
+uniform float uKinkCenter;
+uniform float uKinkRadius;
+uniform float uKinkPeriod;
 
 vec3 bedhairWarp(vec3 p, float amount) {
   vec3 range = uMaxLorenz - uMinLorenz;
@@ -126,6 +129,16 @@ export function makeAttractorMaterial(maxPoints, stripePeriod = 4, linewidth = 1
   // Per-material opacity for the looping recorder's fade-in/fade-out cycles.
   // Held on userData so the recorder can update it per attractor per frame.
   const opacityUniform = { value: 1.0 };
+  // Per-material kink fade. uKinkCenter is the slot index where the trail
+  // wraps the looping V-frame buffer; vertices within uKinkRadius slots
+  // of it fade to 0. Sentinel value (large negative) = no kink visible.
+  const kinkCenterUniform = { value: -1e6 };
+  const kinkRadiusUniform = { value: 10.0 };
+  // uKinkPeriod = V * steps_i (length of the recorded trajectory in
+  // substeps). When the trail's length exceeds the period it spans
+  // multiple wraps; the shader mods slot offsets by this so every wrap
+  // gets faded. Default = huge value → no fade when inactive.
+  const kinkPeriodUniform = { value: 1e8 };
   const material = new LineMaterial({
     vertexColors: true,
     transparent: true,
@@ -143,6 +156,9 @@ export function makeAttractorMaterial(maxPoints, stripePeriod = 4, linewidth = 1
     linewidth, // in screen pixels
   });
   material.userData.opacityUniform = opacityUniform;
+  material.userData.kinkCenterUniform = kinkCenterUniform;
+  material.userData.kinkRadiusUniform = kinkRadiusUniform;
+  material.userData.kinkPeriodUniform = kinkPeriodUniform;
 
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uBedhair = bedhairUniform;
@@ -161,6 +177,9 @@ export function makeAttractorMaterial(maxPoints, stripePeriod = 4, linewidth = 1
     shader.uniforms.uCNorm = cNormUniform;
     shader.uniforms.uTime = timeUniform;
     shader.uniforms.uOpacity = opacityUniform;
+    shader.uniforms.uKinkCenter = kinkCenterUniform;
+    shader.uniforms.uKinkRadius = kinkRadiusUniform;
+    shader.uniforms.uKinkPeriod = kinkPeriodUniform;
 
     shader.vertexShader = HEADER_GLSL + '\n' + shader.vertexShader
       // Warp segment endpoints before they're projected into screen space.
@@ -207,6 +226,16 @@ export function makeAttractorMaterial(maxPoints, stripePeriod = 4, linewidth = 1
         // Per-material fade. Used by the recorder to stagger attractors
         // in and out of the visible loop. Defaults to 1.0 (no fade).
         vColor *= uOpacity;
+
+        // Localised fade around the looping playback's wrap slot(s). When
+        // the trail spans the V-frame buffer's seam, vertices within
+        // uKinkRadius slots of uKinkCenter (or any multiple of uKinkPeriod
+        // away from it, if the trail is long enough to wrap repeatedly)
+        // dim to 0, hiding the chaos-jump segments without dimming the
+        // rest of the trail.
+        float _kinkRel = mod(_slot - uKinkCenter, uKinkPeriod);
+        float _kinkDist = min(_kinkRel, uKinkPeriod - _kinkRel);
+        vColor *= smoothstep(0.0, max(uKinkRadius, 0.5), _kinkDist);
         `,
       );
   };
