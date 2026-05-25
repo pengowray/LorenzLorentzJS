@@ -1,8 +1,8 @@
 # Loren(t)z JS
 
-A Three.js port of the original Processing sketch in `../LorenzLorentz/`.
+A Three.js port of the original handwritten Processing sketch at [pengowray/LorenzLorentz](https://github.com/pengowray/LorenzLorentz)
 
-A tribute to Hendrik Lorentz (1853–1928) and Edward Lorenz (1917–2008): 122 Lorenz attractors evolve in parallel, drawn as glowing line ribbons.
+A tribute to Hendrik Lorentz (1853–1928) and Edward Lorenz (1917–2008).
 
 ## Running
 
